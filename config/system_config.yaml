@@ -1,233 +1,78 @@
-# Mr.Clean Professional Actuarial Platform Configuration
-# Single source of truth for all system configuration
-
-system:
-  version: "2.0.0"
-  environment: "development"  # development, staging, production
-  debug_mode: true
-  
-  # Storage paths (all configurable)
-  data_storage_path: "data"
-  model_storage_path: "models"
-  log_storage_path: "logs"
-  cache_storage_path: "cache"
-  
-  # Event system
-  event_history_size: 10000
-  event_processing_enabled: true
-  
-  # Performance settings
-  max_concurrent_calculations: 10
-  cache_ttl_hours: 24
-  api_timeout_seconds: 30
-
 business:
-  company_name: "Mr.Clean Professional Actuarial Platform"
-  regulatory_jurisdiction: "US"
-  base_currency: "USD"
-  fiscal_year_end: "12-31"
-  
-  # Default business assumptions (can be overridden)
-  default_profit_margin: 0.15
+  base_currency: USD
+  company_name: Mr.Clean Insurance Platform
   default_expense_ratio: 0.05
-  default_commission_structure:
-    first_year: 0.90
-    renewal: 0.05
-  
-  # Regulatory compliance settings
-  require_assumption_approval: true
-  assumption_expiry_days: 365
-  audit_trail_retention_years: 7
-
+  default_profit_margin: 0.15
+  regulatory_jurisdiction: US
 data_sources:
-  fred_api:
-    type: "api"
-    connection_params:
-      base_url: "https://api.stlouisfed.org/fred"
-      api_key: "${FRED_API_KEY}"  # From environment variable
-      format: "json"
-    refresh_interval_hours: 24
-    timeout_seconds: 30
-    retry_count: 3
-    fallback_enabled: true
-    validation_rules:
-      min_value: -1.0
-      max_value: 1.0
-      required_fields: ["observations"]
-
   alpha_vantage:
-    type: "api"
     connection_params:
-      base_url: "https://www.alphavantage.co/query"
-      api_key: "${ALPHA_VANTAGE_KEY}"  # From environment variable
+      api_key: ${ALPHA_VANTAGE_KEY}
+      base_url: https://www.alphavantage.co/query
+    fallback_enabled: true
     refresh_interval_hours: 1
-    timeout_seconds: 30
     retry_count: 3
-    fallback_enabled: true
-    validation_rules:
-      required_fields: ["Global Quote"]
-
-  soa_mortality_tables:
-    type: "file"
+    timeout_seconds: 30
+    type: api
+  fred_api:
     connection_params:
-      data_path: "data/mortality_tables"
-      table_version: "2017_CSO"
-      base_table_url: "https://mort.soa.org"
-    refresh_interval_hours: 8760  # Annual refresh
+      api_key: ${FRED_API_KEY}
+      base_url: https://api.stlouisfed.org/fred
+      format: json
     fallback_enabled: true
-    validation_rules:
-      min_mortality_rate: 0.0001
-      max_mortality_rate: 1.0
-      required_age_range: [0, 120]
-
+    refresh_interval_hours: 24
+    retry_count: 3
+    timeout_seconds: 30
+    type: api
+  soa_mortality_tables:
+    connection_params:
+      data_path: data/mortality_tables
+      table_version: 2017_CSO
+    fallback_enabled: true
+    refresh_interval_hours: 8760
+    type: file
 models:
-  mortality_enhancement:
-    type: "xgboost"
-    parameters:
-      n_estimators: 500
-      max_depth: 6
-      learning_rate: 0.1
-      subsample: 0.8
-      colsample_bytree: 0.8
-      random_state: 42
-    training_schedule: "monthly"
-    validation_threshold: 0.85
-    auto_retrain: true
-    feature_columns:
-      - "age"
-      - "gender"
-      - "smoker"
-      - "bmi"
-      - "medical_history"
-      - "family_history"
-      - "occupation"
-      - "geographic_region"
-    target_column: "mortality_adjustment_factor"
-    
-  lapse_prediction:
-    type: "random_forest"
-    parameters:
-      n_estimators: 200
-      max_depth: 10
-      min_samples_split: 5
-      min_samples_leaf: 2
-      random_state: 42
-    training_schedule: "quarterly"
-    validation_threshold: 0.80
-    auto_retrain: true
-    feature_columns:
-      - "policy_duration"
-      - "premium_amount"
-      - "face_amount"
-      - "cash_value"
-      - "policy_loans"
-      - "economic_conditions"
-      - "customer_age"
-    target_column: "lapse_probability"
-
   economic_forecasting:
-    type: "neural_network"
+    auto_retrain: true
     parameters:
-      hidden_layers: [64, 32, 16]
       dropout_rate: 0.2
       epochs: 100
-      batch_size: 32
-      learning_rate: 0.001
-      optimizer: "adam"
-    training_schedule: "weekly"
+      hidden_layers:
+      - 64
+      - 32
+      - 16
+    training_schedule: weekly
+    type: neural_network
     validation_threshold: 0.75
+  lapse_prediction:
+    auto_retrain: true
+    parameters:
+      max_depth: 10
+      n_estimators: 200
+      random_state: 42
+    training_schedule: quarterly
+    type: random_forest
+    validation_threshold: 0.8
+  mortality_enhancement:
     auto_retrain: true
     feature_columns:
-      - "fed_funds_rate"
-      - "treasury_10y"
-      - "inflation_rate"
-      - "gdp_growth"
-      - "unemployment_rate"
-      - "market_volatility"
-    target_column: "future_interest_rates"
-
-# Assumption management configuration
-assumptions:
-  governance:
-    require_approval: true
-    approval_levels:
-      - "Product_Actuary"    # Can request overrides
-      - "Chief_Actuary"      # Can approve minor overrides
-      - "Assumption_Committee"  # Required for major overrides
-    
-  override_thresholds:
-    minor_change_threshold: 0.05    # 5% change or less
-    major_change_threshold: 0.15    # 15% change or more
-    
-  default_expiry_days: 365
-  warning_days_before_expiry: 60
-  
-  categories:
-    mortality:
-      base_table: "SOA_2017_CSO"
-      improvement_scale: "MP-2017"
-      max_override_factor: 1.25  # Can't increase by more than 25%
-      
-    economic:
-      interest_rate_floor: 0.001   # 0.1% minimum
-      interest_rate_ceiling: 0.20  # 20% maximum
-      default_credit_spread: 0.008 # 80 bps
-      
-    lapse:
-      min_lapse_rate: 0.01  # 1% minimum
-      max_lapse_rate: 0.50  # 50% maximum
-      default_shock_factor: 2.0
-      
-    expense:
-      inflation_adjustment: true
-      min_per_policy_cost: 50.0
-      max_per_policy_cost: 1000.0
-
-# UI Configuration
-ui:
-  theme: "professional"
-  default_charts:
-    - "mortality_rates"
-    - "economic_trends" 
-    - "model_performance"
-    - "assumption_changes"
-  
-  refresh_intervals:
-    dashboard_seconds: 30
-    charts_seconds: 60
-    data_sources_seconds: 300
-    
-  export_formats:
-    - "csv"
-    - "excel"
-    - "pdf"
-    
-  user_preferences:
-    items_per_page: 25
-    chart_theme: "plotly_white"
-    precision_decimals: 6
-
-# Security and compliance
-security:
-  audit_logging: true
-  data_encryption: true
-  session_timeout_minutes: 120
-  max_login_attempts: 5
-  
-compliance:
-  regulatory_frameworks:
-    - "NAIC"
-    - "SOA_Standards"
-    - "GAAP_LDTI"
-    - "SR_11_7"
-  
-  required_documentation:
-    - "model_validation_report"
-    - "assumption_justification"
-    - "back_testing_results"
-    - "peer_review_sign_off"
-    
-  filing_requirements:
-    frequency: "quarterly"
-    deadline_days: 45
-    auto_generate_reports: true
+    - age
+    - gender
+    - smoker
+    - bmi
+    - medical_history
+    parameters:
+      learning_rate: 0.1
+      max_depth: 6
+      n_estimators: 500
+      random_state: 42
+    training_schedule: monthly
+    type: xgboost
+    validation_threshold: 0.85
+system:
+  data_storage_path: data
+  debug_mode: true
+  environment: development
+  log_storage_path: logs
+  model_storage_path: models
+  version: 1.0.0

@@ -142,7 +142,14 @@ class ConfigurationManager:
         
         # Parse business configuration
         business_config = config_data.get('business', {})
-        self.business = BusinessConfig(**business_config)
+        # Filter out any unknown fields for BusinessConfig
+        try:
+            valid_business_fields = set(BusinessConfig.__dataclass_fields__.keys())
+            filtered_business_config = {k: v for k, v in business_config.items() if k in valid_business_fields}
+            self.business = BusinessConfig(**filtered_business_config)
+        except Exception as e:
+            logger.warning(f"Error parsing business config: {e}, using defaults")
+            self.business = BusinessConfig()
         
         # Parse system configuration
         system_config = config_data.get('system', {})

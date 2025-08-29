@@ -31,33 +31,26 @@ class OverrideStatus(Enum):
 @dataclass
 class AssumptionOverride:
     """Single assumption override with full audit trail"""
+    # Required fields first
     override_id: str
     assumption_type: AssumptionType
     description: str
-    
-    # What's being overridden
     base_value: float
     override_value: float
-    override_factor: Optional[float] = None  # e.g., 1.05 for 5% increase
-    
-    # Business justification
     justification: str
-    supporting_data: Dict[str, Any] = field(default_factory=dict)
-    experience_period: Optional[str] = None
-    
-    # Governance
     requested_by: str
     requested_date: datetime
+    effective_date: datetime
+    
+    # Optional fields with defaults
+    override_factor: Optional[float] = None  # e.g., 1.05 for 5% increase
+    supporting_data: Dict[str, Any] = field(default_factory=dict)
+    experience_period: Optional[str] = None
     approved_by: Optional[str] = None
     approved_date: Optional[datetime] = None
     status: OverrideStatus = OverrideStatus.PENDING
-    
-    # Application scope
-    effective_date: datetime
     expiry_date: Optional[datetime] = None
     applies_to: Dict[str, Any] = field(default_factory=dict)  # Product, state, age band
-    
-    # Impact tracking
     pricing_impact: Optional[Dict[str, float]] = None
     volume_impact: Optional[float] = None
 

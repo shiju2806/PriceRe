@@ -1,7 +1,6 @@
 """
 Real Economic Data Integration
 Uses FRED API and Alpha Vantage for legitimate actuarial data
-Now with modular architecture and automatic dependency management
 """
 
 import pandas as pd
@@ -11,75 +10,25 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import json
 import logging
-import asyncio
 
-# Import modular system components
-from ...core.modular_system import DataSourceComponent
-from ...core.configuration import config_manager
-from ...core.event_system import event_bus, Event, EventType
-
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class RealEconomicDataEngine(DataSourceComponent):
+class RealEconomicDataEngine:
     """
     Real economic data engine using FRED and Alpha Vantage APIs
-    Now fully modular with configuration-driven setup
     """
     
     def __init__(self):
-        super().__init__("economic_data")
+        self.fred_api_key = "41fd5c9bf61a1b66427b0e12ec7061b2"
+        self.alpha_vantage_key = "NFMS41LNORX42FRL"
+        self.fred_base_url = "https://api.stlouisfed.org/fred"
+        self.av_base_url = "https://www.alphavantage.co/query"
         
-        # Configuration will be loaded automatically
-        self.fred_api_key = None
-        self.alpha_vantage_key = None
-        self.fred_base_url = None
-        self.av_base_url = None
-    
-    def _load_configuration(self) -> Dict[str, Any]:
-        """Load economic data source configuration"""
-        fred_config = config_manager.get_data_source_config("fred_api")
-        av_config = config_manager.get_data_source_config("alpha_vantage")
-        
-        config = {}
-        
-        if fred_config:
-            self.fred_api_key = config_manager.get_api_key("fred_api")
-            self.fred_base_url = fred_config.connection_params.get("base_url")
-            config["fred"] = fred_config.__dict__
-        
-        if av_config:
-            self.alpha_vantage_key = config_manager.get_api_key("alpha_vantage")
-            self.av_base_url = av_config.connection_params.get("base_url")
-            config["alpha_vantage"] = av_config.__dict__
-        
-        return config
-    
-    async def _fetch_data(self) -> Dict[str, Any]:
-        """Fetch fresh economic data from all sources"""
-        data = {}
-        
-        try:
-            # Get treasury yield curve
-            yield_curve = await self._get_treasury_yield_curve()
-            data["treasury_yields"] = yield_curve
-            
-            # Get fed funds rate
-            fed_rate = await self._get_fed_funds_rate()
-            data["fed_funds_rate"] = fed_rate
-            
-            # Get inflation data
-            inflation = await self._get_inflation_data()
-            data["inflation"] = inflation
-            
-            # Get equity indices
-            equity_data = await self._get_equity_indices()
-            data["equity_indices"] = equity_data
-            
-            return data
-            
-        except Exception as e:
-            logger.error(f"Error fetching economic data: {e}")
-            raise
+        # Cache for data to avoid excessive API calls
+        self.data_cache = {}
+        self.cache_expiry = {}
     
     def _is_cache_valid(self, key: str, hours: int = 24) -> bool:
         """Check if cached data is still valid"""
@@ -92,7 +41,7 @@ class RealEconomicDataEngine(DataSourceComponent):
         self.data_cache[key] = data
         self.cache_expiry[key] = datetime.now() + timedelta(hours=hours)
     
-    async def _get_treasury_yield_curve(self) -> Dict[str, float]:
+    def get_treasury_yield_curve(self) -> Dict[str, float]:
         """
         Get current US Treasury yield curve from FRED
         Returns yields for standard maturities
