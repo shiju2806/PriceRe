@@ -17,6 +17,10 @@ from .mortality_ml import MortalityMLEnhancer
 from .economic_forecasting import EconomicForecastingEngine
 from .lapse_modeling import LapseModelingEngine
 
+# Import real data sources
+from ..data_sources.real_mortality_data import real_mortality_engine
+from ..data_sources.real_economic_data import real_economic_engine
+
 @dataclass
 class PricingResult:
     """Comprehensive pricing result with ML enhancements"""

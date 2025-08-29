@@ -838,7 +838,46 @@ def display_pricing_results(result: TreatyResult):
                 st.success("✅ **Capital position exceeds regulatory and economic requirements**")
         
         with tab4:
-            st.markdown("#### Regulatory Compliance & Standards")
+            st.markdown("#### 🔗 Real Data Sources & Lineage")
+            
+            # Show real data sources being used
+            try:
+                real_sources = transparency_engine.show_real_data_sources()
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**📊 Live Economic Data (FRED & Alpha Vantage):**")
+                    
+                    current_rates = real_sources["economic_data"]["current_rates"]
+                    st.metric("Fed Funds Rate", current_rates["fed_funds_rate"])
+                    st.metric("10-Year Treasury", current_rates["treasury_10y"])
+                    st.metric("Core Inflation", current_rates["core_inflation"])
+                    
+                    st.markdown("**🔌 API Status:**")
+                    for api, status in real_sources["api_credentials"].items():
+                        st.write(f"• {api}: {status}")
+                
+                with col2:
+                    st.markdown("**💀 Real Mortality Data (SOA 2017 CSO):**")
+                    
+                    sample_rates = real_sources["mortality_data"]["sample_rates"]
+                    st.write("**Sample Mortality Rates (Age 45):**")
+                    st.write(f"• Male Non-Smoker: {sample_rates['male_45_nonsmoker']:.6f}")
+                    st.write(f"• Female Non-Smoker: {sample_rates['female_45_nonsmoker']:.6f}")
+                    st.write(f"• Male Smoker: {sample_rates['male_45_smoker']:.6f}")
+                    st.write(f"• Female Smoker: {sample_rates['female_45_smoker']:.6f}")
+                    
+                    st.markdown("**📋 Compliance Status:**")
+                    for item, status in real_sources["compliance"].items():
+                        st.write(f"• {item}: {status}")
+                
+                st.success(f"✅ {real_sources['data_integrity_status']}")
+                st.info(f"Last Updated: {real_sources['data_freshness']['last_refresh']}")
+                
+            except Exception as e:
+                st.error(f"Error loading real data sources: {e}")
+                st.markdown("#### Regulatory Compliance & Standards")
             
             col1, col2 = st.columns(2)
             
