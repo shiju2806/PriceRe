@@ -134,8 +134,9 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 """, unsafe_allow_html=True)
 
 def initialize_comprehensive_state():
-    """Initialize session state for comprehensive workflow"""
+    """Initialize session state for comprehensive workflow with safer approach"""
     
+    # Core workflow state
     if 'workflow_step' not in st.session_state:
         st.session_state.workflow_step = 1
     
@@ -148,6 +149,11 @@ def initialize_comprehensive_state():
     if 'pricing_results' not in st.session_state:
         st.session_state.pricing_results = None
     
+    # Initialize complex objects only when needed to avoid conflicts
+    if 'engines_initialized' not in st.session_state:
+        st.session_state.engines_initialized = False
+    
+    # Lazy initialization flags
     if 'data_processor' not in st.session_state:
         st.session_state.data_processor = None
     
@@ -159,6 +165,37 @@ def initialize_comprehensive_state():
     
     if 'economic_engine' not in st.session_state:
         st.session_state.economic_engine = None
+
+def initialize_engines_safely():
+    """Initialize engines safely when first needed"""
+    if st.session_state.engines_initialized:
+        return
+    
+    try:
+        # Initialize data processor
+        if PROCESSORS_AVAILABLE and st.session_state.data_processor is None:
+            st.session_state.data_processor = IntelligentDataProcessor()
+        
+        # Initialize pricing engine
+        if st.session_state.pricing_engine is None:
+            st.session_state.pricing_engine = ProductionPricingEngine()
+        
+        # Initialize real data engines
+        if REAL_DATA_AVAILABLE:
+            if st.session_state.mortality_engine is None:
+                from src.actuarial.data_sources.real_mortality_data import real_mortality_engine
+                st.session_state.mortality_engine = real_mortality_engine
+            
+            if st.session_state.economic_engine is None:
+                from src.actuarial.data_sources.real_economic_data import real_economic_engine
+                st.session_state.economic_engine = real_economic_engine
+        
+        st.session_state.engines_initialized = True
+        
+    except Exception as e:
+        # Don't fail completely if engines can't initialize
+        st.warning(f"Some engines couldn't initialize: {e}")
+        pass
 
 def display_main_header():
     """Display main platform header"""
@@ -404,15 +441,8 @@ def step_1_data_upload():
     
     st.markdown("## 📤 Upload Your Data")
     
-    # Initialize processors and real data engines
-    if st.session_state.data_processor is None and PROCESSORS_AVAILABLE:
-        st.session_state.data_processor = IntelligentDataProcessor()
-    
-    if st.session_state.mortality_engine is None and REAL_DATA_AVAILABLE:
-        st.session_state.mortality_engine = RealMortalityDataEngine()
-    
-    if st.session_state.economic_engine is None and REAL_DATA_AVAILABLE:
-        st.session_state.economic_engine = RealEconomicDataEngine()
+    # Initialize engines safely
+    initialize_engines_safely()
     
     # Required data types for comprehensive pricing
     required_data_types = [
