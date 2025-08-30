@@ -752,21 +752,20 @@ def step_1_data_upload():
             st.info("Upload at least 2 datasets to continue")
 
 def process_file_intelligently(uploaded_file):
-    """Process file intelligently with robust error handling"""
+    """Process file using enhanced profiler with professional libraries"""
     
     file_key = uploaded_file.name.replace('.', '_').replace('-', '_')
     
-    with st.spinner(f"🧠 Processing {uploaded_file.name}..."):
+    with st.spinner(f"🔍 Analyzing with Enhanced Profiler: {uploaded_file.name}..."):
         try:
-            # First, try basic file loading to validate the file
+            # Load file content
             file_content = uploaded_file.read()
             uploaded_file.seek(0)
             
             # Basic file info
-            file_size = len(file_content)
             file_type = uploaded_file.name.split('.')[-1].lower()
             
-            # Try to load as DataFrame for basic validation
+            # Load as DataFrame
             if file_type == 'csv':
                 import io
                 df = pd.read_csv(io.BytesIO(file_content))
@@ -780,71 +779,106 @@ def process_file_intelligently(uploaded_file):
             else:
                 raise ValueError(f"Unsupported file type: {file_type}")
             
-            # If we get here, file is valid - now try intelligent processing
-            if st.session_state.data_processor and PROCESSORS_AVAILABLE:
+            # Use Enhanced Profiler if available
+            if ENHANCED_PROFILER_AVAILABLE:
                 try:
-                    result = st.session_state.data_processor.process_uploaded_file(
-                        uploaded_file.name, file_content
-                    )
+                    profiler = EnhancedDataProfiler()
+                    profile = profiler.profile_data(df)
                     
-                    if result and hasattr(result, 'success') and result.success:
-                        # Use intelligent processing results
-                        data_type = '|'.join(result.data_type) if isinstance(result.data_type, list) else str(result.data_type)
-                        quality_score = int(getattr(result, 'quality_score', 75))
-                        issues = 'Advanced processing completed'
-                        
+                    # Extract enhanced profiler results
+                    data_quality = profile['data_quality']['overall_completeness']
+                    quality_score = int(data_quality)
+                    
+                    # Determine data type based on column analysis
+                    columns = list(df.columns)
+                    if any('policy' in col.lower() for col in columns):
+                        data_type = 'Insurance Policy Data'
+                    elif any('claim' in col.lower() for col in columns):
+                        data_type = 'Claims Data'
+                    elif any('mortality' in col.lower() or 'death' in col.lower() for col in columns):
+                        data_type = 'Mortality Data'
                     else:
-                        # Fallback to basic processing
-                        data_type = f"{file_type}_data"
-                        quality_score = 70  # Basic processing score
-                        issues = 'Basic processing applied'
-                        
-                except Exception as proc_error:
-                    # Fallback to basic processing if intelligent processing fails
-                    data_type = f"{file_type}_data"
-                    quality_score = 65
-                    issues = f"Basic processing (intelligent processing failed: {str(proc_error)[:100]})"
+                        data_type = 'Other Insurance Data'
+                    
+                    # Create issues summary
+                    issues_count = len(profile['recommendations'])
+                    structural_issues = len(profile['structural_issues'])
+                    
+                    if issues_count > 5:
+                        issues_summary = f"🟡 {issues_count} data quality issues found"
+                    elif issues_count > 0:
+                        issues_summary = f"🟢 {issues_count} minor issues detected"
+                    else:
+                        issues_summary = "🟢 Excellent data quality"
+                    
+                    if structural_issues > 0:
+                        issues_summary += f", {structural_issues} structural issues"
+                    
+                    # Create actionable recommendations
+                    recommendations = []
+                    for rec in profile['recommendations'][:5]:  # Top 5 recommendations
+                        recommendations.append(f"• {rec['recommendation']}: {rec['issue']}")
+                    
+                    recommendations_text = "\n".join(recommendations) if recommendations else "No immediate actions needed"
+                    
+                    # Store enhanced profile data
+                    st.session_state.uploaded_datasets[file_key] = {
+                        'filename': uploaded_file.name,
+                        'data_type': data_type,
+                        'data': df,
+                        'quality_score': quality_score,
+                        'records': len(df),
+                        'issues': issues_summary,
+                        'recommendations': recommendations_text,
+                        'enhanced_profile': profile,  # Store full profile
+                        'profiler': profiler  # Store profiler instance
+                    }
+                    
+                    st.success(f"✅ Enhanced Analysis Complete: {quality_score}% quality, {issues_count} issues identified")
+                    
+                except Exception as enhanced_error:
+                    st.warning(f"Enhanced profiler failed, using fallback: {enhanced_error}")
+                    # Fallback to basic processing
+                    process_file_basic_fallback(uploaded_file, df, file_key, file_type)
             else:
-                # No intelligent processor available - use basic processing
-                data_type = f"{file_type}_data"
-                quality_score = 70
-                issues = 'Basic processing applied - no advanced processor available'
+                # Fallback to basic processing
+                process_file_basic_fallback(uploaded_file, df, file_key, file_type)
             
-            # Store the processed data
-            st.session_state.uploaded_datasets[file_key] = {
-                'filename': uploaded_file.name,
-                'data_type': data_type,
-                'data': df,
-                'quality_score': quality_score,
-                'records': len(df),
-                'issues': issues,
-                'recommendations': 'Data loaded successfully and ready for analysis'
-            }
-            
-            st.success(f"✅ Processing complete!")
-            st.info(f"**Type:** {data_type} | **Quality:** {quality_score}/100 | **Records:** {len(df):,}")
-            
-            # Auto-refresh to show updated status
-            st.rerun()
-                
         except Exception as e:
             st.error(f"❌ Processing failed: {str(e)}")
-            
-            # Show helpful error details
-            with st.expander("🔍 Error Details"):
-                st.code(f"""
-File: {uploaded_file.name}
-Size: {uploaded_file.size:,} bytes
-Error Type: {type(e).__name__}
-Error Message: {str(e)}
-                """)
-                
-                # Suggest solutions
-                st.markdown("**Possible solutions:**")
-                st.markdown("• Check if file format is supported (CSV, Excel, JSON)")
-                st.markdown("• Ensure file is not corrupted")
-                st.markdown("• Try a smaller file size")
-                st.markdown("• Check file encoding (should be UTF-8)")
+            import traceback
+            st.error(traceback.format_exc())
+
+def process_file_basic_fallback(uploaded_file, df, file_key, file_type):
+    """Fallback processing when enhanced profiler isn't available"""
+    
+    # Basic data type detection
+    columns = list(df.columns)
+    if any('policy' in col.lower() for col in columns):
+        data_type = 'Insurance Policy Data'
+    elif any('claim' in col.lower() for col in columns):
+        data_type = 'Claims Data'
+    else:
+        data_type = f"{file_type.upper()} Data"
+    
+    # Basic quality assessment
+    total_cells = df.shape[0] * df.shape[1]
+    missing_cells = df.isna().sum().sum()
+    completeness = ((total_cells - missing_cells) / total_cells) * 100
+    quality_score = int(completeness)
+    
+    # Store basic processed data
+    st.session_state.uploaded_datasets[file_key] = {
+        'filename': uploaded_file.name,
+        'data_type': data_type,
+        'data': df,
+        'quality_score': quality_score,
+        'records': len(df),
+        'issues': f'Basic processing applied - {completeness:.1f}% complete',
+        'recommendations': 'Upload processed successfully'
+    }
+    
+    st.info("Using basic processing - enhanced profiler not available")
 
 def step_2_intelligent_analysis():
     """Step 2: Intelligent Analysis and Data Integration"""
