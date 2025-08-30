@@ -134,67 +134,38 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 """, unsafe_allow_html=True)
 
 def initialize_comprehensive_state():
-    """Initialize session state for comprehensive workflow with safer approach"""
+    """Initialize session state with minimal complexity to avoid 403 errors"""
     
-    # Core workflow state
-    if 'workflow_step' not in st.session_state:
-        st.session_state.workflow_step = 1
+    # Core workflow state only - minimal to prevent conflicts
+    defaults = {
+        'workflow_step': 1,
+        'uploaded_datasets': {},
+        'pricing_submission': None,
+        'pricing_results': None,
+        'engines_initialized': False
+    }
     
-    if 'uploaded_datasets' not in st.session_state:
-        st.session_state.uploaded_datasets = {}
-    
-    if 'pricing_submission' not in st.session_state:
-        st.session_state.pricing_submission = None
-    
-    if 'pricing_results' not in st.session_state:
-        st.session_state.pricing_results = None
-    
-    # Initialize complex objects only when needed to avoid conflicts
-    if 'engines_initialized' not in st.session_state:
-        st.session_state.engines_initialized = False
-    
-    # Lazy initialization flags
-    if 'data_processor' not in st.session_state:
-        st.session_state.data_processor = None
-    
-    if 'pricing_engine' not in st.session_state:
-        st.session_state.pricing_engine = None
-    
-    if 'mortality_engine' not in st.session_state:
-        st.session_state.mortality_engine = None
-    
-    if 'economic_engine' not in st.session_state:
-        st.session_state.economic_engine = None
+    # Initialize only what's missing to reduce session state operations
+    for key, default_value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_value
 
 def initialize_engines_safely():
-    """Initialize engines safely when first needed"""
-    if st.session_state.engines_initialized:
+    """Initialize engines safely when first needed - simplified"""
+    if st.session_state.get('engines_initialized', False):
         return
     
     try:
-        # Initialize data processor
-        if PROCESSORS_AVAILABLE and st.session_state.data_processor is None:
-            st.session_state.data_processor = IntelligentDataProcessor()
-        
-        # Initialize pricing engine
-        if st.session_state.pricing_engine is None:
-            st.session_state.pricing_engine = ProductionPricingEngine()
-        
-        # Initialize real data engines
+        # Only initialize what's absolutely needed
         if REAL_DATA_AVAILABLE:
-            if st.session_state.mortality_engine is None:
-                from src.actuarial.data_sources.real_mortality_data import real_mortality_engine
-                st.session_state.mortality_engine = real_mortality_engine
-            
-            if st.session_state.economic_engine is None:
-                from src.actuarial.data_sources.real_economic_data import real_economic_engine
-                st.session_state.economic_engine = real_economic_engine
+            from src.actuarial.data_sources.real_mortality_data import real_mortality_engine
+            from src.actuarial.data_sources.real_economic_data import real_economic_engine
+            # Don't store in session state to avoid conflicts
         
         st.session_state.engines_initialized = True
         
     except Exception as e:
-        # Don't fail completely if engines can't initialize
-        st.warning(f"Some engines couldn't initialize: {e}")
+        # Silently continue if engines can't initialize
         pass
 
 def display_main_header():
@@ -542,9 +513,32 @@ def step_1_data_upload():
                         # Basic metrics in a clean row
                         st.markdown(f"**Records:** {dataset_info['records']:,} | **Data Type:** {dataset_info['data_type'].replace('_', ' ').title()}")
                         
-                        # Quality score with proper spacing
-                        quality_color = "🟢" if dataset_info['quality_score'] >= 85 else "🟡" if dataset_info['quality_score'] >= 70 else "🟠"
-                        st.markdown(f"**Quality Score:** {quality_color} {dataset_info['quality_score']}/100")
+                        # Show enhanced profiler results if available
+                        if 'enhanced_profile' in dataset_info:
+                            profile = dataset_info['enhanced_profile']
+                            issues_count = len(profile['recommendations'])
+                            structural_issues = len(profile['structural_issues'])
+                            
+                            # Enhanced quality display
+                            completeness = profile['data_quality']['overall_completeness']
+                            st.markdown(f"**🔍 Enhanced Analysis:** {completeness:.1f}% complete | {issues_count} issues detected | {structural_issues} structural issues")
+                            
+                            # Show specific issues found
+                            if profile['recommendations']:
+                                st.markdown("##### 💡 Key Issues Detected:")
+                                for i, rec in enumerate(profile['recommendations'][:3], 1):
+                                    issue_icon = "🚨" if rec['category'] == 'Data Quality' else "⚠️"
+                                    st.markdown(f"{issue_icon} **{rec['recommendation']}**: {rec['issue']}")
+                                    
+                                if len(profile['recommendations']) > 3:
+                                    st.info(f"+ {len(profile['recommendations']) - 3} additional issues detected - view detailed report for more")
+                            else:
+                                st.success("🟢 Excellent data quality - no issues detected!")
+                                
+                        else:
+                            # Fallback to basic display
+                            quality_color = "🟢" if dataset_info['quality_score'] >= 85 else "🟡" if dataset_info['quality_score'] >= 70 else "🟠"
+                            st.markdown(f"**Quality Score:** {quality_color} {dataset_info['quality_score']}/100")
                         
                         # Comprehensive Data Quality Report
                         if st.button("📋 View Data Quality Report", key=f"quality_report_{file.name}", use_container_width=True):
@@ -782,6 +776,10 @@ def process_file_intelligently(uploaded_file):
             # Use Enhanced Profiler if available
             if ENHANCED_PROFILER_AVAILABLE:
                 try:
+                    # Add memory check for large files
+                    if len(df) > 10000:
+                        st.warning("⚠️ Large dataset detected - using optimized processing")
+                    
                     profiler = EnhancedDataProfiler()
                     profile = profiler.profile_data(df)
                     
@@ -821,18 +819,31 @@ def process_file_intelligently(uploaded_file):
                     
                     recommendations_text = "\n".join(recommendations) if recommendations else "No immediate actions needed"
                     
-                    # Store enhanced profile data
-                    st.session_state.uploaded_datasets[file_key] = {
-                        'filename': uploaded_file.name,
-                        'data_type': data_type,
-                        'data': df,
-                        'quality_score': quality_score,
-                        'records': len(df),
-                        'issues': issues_summary,
-                        'recommendations': recommendations_text,
-                        'enhanced_profile': profile,  # Store full profile
-                        'profiler': profiler  # Store profiler instance
-                    }
+                    # Store enhanced profile data (with error handling)
+                    try:
+                        st.session_state.uploaded_datasets[file_key] = {
+                            'filename': uploaded_file.name,
+                            'data_type': data_type,
+                            'data': df,
+                            'quality_score': quality_score,
+                            'records': len(df),
+                            'issues': issues_summary,
+                            'recommendations': recommendations_text,
+                            'enhanced_profile': profile,  # Store full profile
+                            'profiler': profiler  # Store profiler instance
+                        }
+                    except Exception as session_error:
+                        st.error(f"Session storage failed: {session_error}")
+                        # Try minimal storage
+                        st.session_state.uploaded_datasets[file_key] = {
+                            'filename': uploaded_file.name,
+                            'data_type': data_type,
+                            'data': df,
+                            'quality_score': quality_score,
+                            'records': len(df),
+                            'issues': issues_summary,
+                            'recommendations': recommendations_text
+                        }
                     
                     st.success(f"✅ Enhanced Analysis Complete: {quality_score}% quality, {issues_count} issues identified")
                     
