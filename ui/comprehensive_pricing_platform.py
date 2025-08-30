@@ -533,6 +533,9 @@ def step_1_data_upload():
                     if is_processed:
                         dataset_info = st.session_state.uploaded_datasets[file_key]
                         
+                        # Get cleaning history for this file (define at proper scope)
+                        file_cleaning_history = st.session_state.get(f"cleaning_history_{file_key}", [])
+                        
                         st.markdown("---")
                         st.markdown("#### ✅ Processing Complete")
                         
@@ -659,12 +662,13 @@ def step_1_data_upload():
                         with col_download2:
                             # Excel download
                             excel_buffer = io.BytesIO()
+                            
                             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
                                 dataset_info['data'].to_excel(writer, sheet_name='Cleaned Data', index=False)
                                 
                                 # Add cleaning history sheet if available
-                                if cleaning_history:
-                                    history_df = pd.DataFrame(cleaning_history)
+                                if file_cleaning_history:
+                                    history_df = pd.DataFrame(file_cleaning_history)
                                     history_df.to_excel(writer, sheet_name='Cleaning History', index=False)
                             
                             st.download_button(
@@ -678,14 +682,14 @@ def step_1_data_upload():
                         
                         with col_download3:
                             # Original vs Cleaned comparison
-                            if cleaning_history:
+                            if file_cleaning_history:
                                 original_data = st.session_state.get(f"original_data_{file_key}")
                                 if original_data is not None:
                                     comparison_buffer = io.BytesIO()
                                     with pd.ExcelWriter(comparison_buffer, engine='openpyxl') as writer:
                                         original_data.to_excel(writer, sheet_name='Original', index=False)
                                         dataset_info['data'].to_excel(writer, sheet_name='Cleaned', index=False)
-                                        pd.DataFrame(cleaning_history).to_excel(writer, sheet_name='Changes Log', index=False)
+                                        pd.DataFrame(file_cleaning_history).to_excel(writer, sheet_name='Changes Log', index=False)
                                     
                                     st.download_button(
                                         "🔄 Comparison",
@@ -702,8 +706,8 @@ def step_1_data_upload():
                             st.write(f"**Ready for:** Reinsurance pricing analysis")
                             st.write(f"**Records:** {len(dataset_info['data']):,}")
                             st.write(f"**Columns:** {len(dataset_info['data'].columns)}")
-                            if cleaning_history:
-                                st.write(f"**Cleaning steps applied:** {len(cleaning_history)}")
+                            if file_cleaning_history:
+                                st.write(f"**Cleaning steps applied:** {len(file_cleaning_history)}")
                     
                     else:
                         st.markdown("---")
