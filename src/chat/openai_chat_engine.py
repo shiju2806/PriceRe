@@ -124,24 +124,35 @@ class OpenAIChatEngine:
     def _build_system_prompt(self) -> str:
         """Build comprehensive system prompt for PriceRe assistant"""
         
-        base_prompt = """You are PriceRe Chat, an expert AI assistant specialized in:
+        base_prompt = """You are PriceRe Chat, a specialized AI assistant for reinsurance professionals, powered by GPT-4o-mini. Your expertise covers:
 
-1. **Reinsurance & Insurance**: Treaty reinsurance, facultative reinsurance, catastrophe modeling, pricing, risk assessment, regulatory compliance, market analysis
-2. **Data Cleaning & Analysis**: Identifying junk rows, data quality assessment, statistical analysis, data transformation recommendations
-3. **Platform Guidance**: Help users navigate the PriceRe platform features and workflows
+🔥 **Core Reinsurance Expertise**:
+- Treaty reinsurance (quota share, surplus, excess of loss, stop loss)
+- Facultative reinsurance placement and pricing
+- Catastrophe modeling (RMS, AIR, EQE) and nat cat pricing  
+- Retrocessional structures and capital optimization
+- Cedent analysis, portfolio assessment, and risk selection
+- Regulatory capital (Solvency II, NAIC, OSFI) and rating agency models
 
-**Your Personality**:
-- Professional but friendly and approachable
-- Provide clear, actionable advice
-- Ask clarifying questions when needed
-- Explain technical concepts in accessible terms
-- Focus on practical solutions
+📊 **Data & Analytics**:
+- Insurance data quality assessment and cleaning
+- Loss triangles, development patterns, and reserving
+- Experience rating, credibility theory, and pricing
+- Portfolio optimization and risk-return analysis
+- Statistical modeling for underwriting and claims
 
-**Response Style**:
-- Be concise but comprehensive
-- Use bullet points for multiple items
-- Provide specific examples when helpful
-- Always consider the insurance/reinsurance context
+⚙️ **Platform Support**:
+- PriceRe workflow guidance and feature explanations
+- Data upload, cleaning, and preparation assistance
+- Workflow troubleshooting and best practices
+
+**Communication Style**:
+- Professional yet approachable tone suitable for insurance executives
+- Provide actionable insights with specific examples
+- Use industry terminology appropriately
+- Ask clarifying questions to understand context
+- Focus on practical, implementable solutions
+- Reference specific methodologies and standards when relevant
 """
 
         # Add data context if available
@@ -187,14 +198,14 @@ You can provide specific insights about this dataset, suggest further cleaning r
                     "content": msg["content"]
                 })
             
-            # Call OpenAI API
+            # Call OpenAI API with GPT-4o-mini (cost-efficient and fast)
             response = self.client.chat.completions.create(
-                model=self.model,
+                model="gpt-4o-mini",  # Explicitly specify GPT-4o-mini
                 messages=messages,
-                max_tokens=1000,
-                temperature=0.7,
+                max_tokens=800,  # Optimized for concise responses
+                temperature=0.6,  # Slightly more focused for professional responses
                 top_p=0.9,
-                frequency_penalty=0.1,
+                frequency_penalty=0.2,  # Reduce repetition in technical responses
                 presence_penalty=0.1
             )
             
@@ -223,6 +234,23 @@ You can provide specific insights about this dataset, suggest further cleaning r
         """Clear conversation history"""
         self.conversation_history = []
         logger.info("Conversation history cleared")
+    
+    def get_model_info(self) -> Dict[str, str]:
+        """Get current model information"""
+        return {
+            "model": self.model,
+            "api_key_configured": bool(self.api_key),
+            "conversation_length": len(self.conversation_history),
+            "has_data_context": self.context.has_data
+        }
+    
+    def test_connection(self) -> str:
+        """Test OpenAI connection with a simple query"""
+        try:
+            test_response = self.chat("Hello! Please confirm you are PriceRe Chat powered by GPT-4o-mini and briefly introduce your reinsurance capabilities.")
+            return f"✅ GPT-4o-mini connection successful: {test_response[:100]}..."
+        except Exception as e:
+            return f"❌ Connection failed: {str(e)}"
     
     def suggest_data_insights(self) -> str:
         """Generate proactive insights about the current dataset"""
