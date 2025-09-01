@@ -19,6 +19,7 @@ flaml==2.1.2
 # AI/LLM
 sentence-transformers==2.2.2
 transformers==4.36.2
+openai==1.51.0
 
 # API & Web
 fastapi==0.109.2

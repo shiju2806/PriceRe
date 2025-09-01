@@ -14,20 +14,36 @@ import plotly.graph_objects as go
 from datetime import datetime, date
 from typing import List, Dict, Any
 import io
+import pickle
+import tempfile
+import os
 
-# Import enhanced profiler with professional libraries
+# Import Phase 2 hybrid cleaning system (our main cleaning solution)
 try:
-    from src.data_cleaning.enhanced_profiler import EnhancedDataProfiler
-    ENHANCED_PROFILER_AVAILABLE = True
+    from src.cleaning.hybrid_detector import create_hybrid_detector, quick_hybrid_clean
+    from src.cleaning.statistical_analyzer import create_statistical_detector
+    from src.cleaning.data_sources import read_any_source
+    import polars as pl
+    PHASE2_CLEANING_AVAILABLE = True
 except ImportError:
-    ENHANCED_PROFILER_AVAILABLE = False
+    PHASE2_CLEANING_AVAILABLE = False
 
-# Fallback to comprehensive profiler if needed
+# Import Chat Assistant for cleaning refinement
 try:
-    from src.data_cleaning.comprehensive_profiler import ComprehensiveDataProfiler
-    COMPREHENSIVE_PROFILER_AVAILABLE = True
+    from src.chat.streamlit_chat_interface import (
+        render_chat_sidebar, show_chat_in_expander, 
+        add_chat_refinement_button, reset_chat_session
+    )
+    CHAT_ASSISTANT_AVAILABLE = True
 except ImportError:
-    COMPREHENSIVE_PROFILER_AVAILABLE = False
+    CHAT_ASSISTANT_AVAILABLE = False
+    
+# Import Great Expectations for data profiling (not cleaning)
+try:
+    from src.data_cleaning.simple_ge_profiler import SimpleGreatExpectationsProfiler
+    ENTERPRISE_PROFILER_AVAILABLE = True
+except ImportError:
+    ENTERPRISE_PROFILER_AVAILABLE = False
 
 # Add project paths
 project_root = Path(__file__).parent.parent
@@ -54,9 +70,422 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Persistent storage utilities
+TEMP_DIR = Path(tempfile.gettempdir()) / "pricere_cleaning"
+TEMP_DIR.mkdir(exist_ok=True)
+
+def save_persistent_results(file_key: str, results: dict):
+    """Save cleaning results to persistent file storage"""
+    try:
+        filepath = TEMP_DIR / f"{file_key}_results.pkl"
+        with open(filepath, 'wb') as f:
+            pickle.dump(results, f)
+        # Also update session state for immediate access
+        st.session_state['latest_cleaning_results'] = results
+        return True
+    except Exception as e:
+        st.error(f"Failed to save persistent results: {e}")
+        return False
+
+def load_persistent_results(file_key: str) -> dict:
+    """Load cleaning results from persistent file storage"""
+    try:
+        filepath = TEMP_DIR / f"{file_key}_results.pkl"
+        if filepath.exists():
+            with open(filepath, 'rb') as f:
+                results = pickle.load(f)
+            return results
+    except Exception as e:
+        st.warning(f"Failed to load persistent results: {e}")
+    return {}
+
+def get_latest_persistent_results() -> dict:
+    """Get the most recent cleaning results - prioritize current session over cache"""
+    try:
+        # Check current session state FIRST - this is the most recent data
+        session_results = st.session_state.get('latest_cleaning_results', {})
+        if (session_results.get('df_original') is not None and 
+            session_results.get('df_cleaned') is not None and
+            session_results.get('result') is not None):
+            return session_results
+        
+        # Only check file system cache if no current session data
+        result_files = list(TEMP_DIR.glob("*_results.pkl"))
+        if result_files:
+            # Get most recently modified
+            latest_file = max(result_files, key=lambda f: f.stat().st_mtime)
+            with open(latest_file, 'rb') as f:
+                results = pickle.load(f)
+            
+            # Validate that we have actual cleaning data
+            if (results.get('df_original') is not None and 
+                results.get('df_cleaned') is not None and
+                results.get('result') is not None):
+                return results
+            
+    except Exception as e:
+        # Don't show warning for normal "no data" state
+        pass
+    return {}
+
+def render_floating_chat_widget():
+    """Render floating chat widget in sidebar (reliable approach)"""
+    
+    # Check if we have cleaning data for notification
+    persistent_results = get_latest_persistent_results()
+    has_cleaning_data = bool(persistent_results)
+    
+    # Use sidebar for reliable chat access
+    with st.sidebar:
+        st.markdown("")
+        st.markdown("---")
+        
+        # Show notification only if we actually have cleaned data
+        if (has_cleaning_data and 
+            persistent_results.get('df_cleaned') is not None and 
+            not st.session_state.get('chat_widget_opened', False)):
+            st.info("💬 Data ready for chat analysis!")
+        
+        # Chat button with gradient styling
+        st.markdown("""
+        <style>
+        /* Style the sidebar chat button */
+        .sidebar .stButton > button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 25px !important;
+            height: 50px !important;
+            font-size: 16px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important;
+            transition: all 0.3s ease !important;
+            width: 100% !important;
+        }
+        
+        .sidebar .stButton > button:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%) !important;
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5) !important;
+        }
+        
+        .sidebar .stButton > button:active {
+            transform: translateY(0) !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Simple, reliable chat button
+        if st.button("💬 PriceRe Chat", key="sidebar_chat_btn", help="Open AI assistant"):
+            st.session_state.chat_widget_opened = True
+            st.session_state.show_chat_modal = True
+            st.rerun()
+    
+    # Show chat modal if requested using Streamlit's dialog
+    if st.session_state.get('show_chat_modal', False):
+        show_chat_dialog(has_cleaning_data, persistent_results)
+
+def show_chat_dialog(has_cleaning_data, persistent_results):
+    """Show chat dialog using Streamlit's modal approach"""
+    
+    @st.dialog("💬 PriceRe Chat Assistant")
+    def chat_dialog():
+        st.markdown("**Your AI assistant for data cleaning, reinsurance questions, and platform help.**")
+        
+        # Check OpenAI availability from environment
+        import os
+        openai_available = bool(os.getenv('OPENAI_API_KEY'))
+        if openai_available:
+            st.success("✅ GPT-4o mini enabled for intelligent conversations!")
+        else:
+            st.info("📝 Using basic pattern matching - set OPENAI_API_KEY in .env for full AI experience")
+        
+        # Show cleaning data status - only if we actually have valid data
+        if has_cleaning_data and persistent_results.get('df_cleaned') is not None:
+            st.success("✅ Cleaning data available - Enhanced chat features enabled")
+            
+            # Auto-load cleaning data if not already loaded
+            if not st.session_state.get('global_chat_active', False):
+                if st.button("🔄 Load Cleaning Data", key="load_cleaning_chat_dialog"):
+                    try:
+                        # Safely prepare data for chat (same logic as before)
+                        df_original = persistent_results.get('df_original')
+                        df_cleaned = persistent_results.get('df_cleaned')
+                        result = persistent_results.get('result')
+                        
+                        if df_original is not None and df_cleaned is not None:
+                            # Convert safely
+                            original_polars = persistent_results.get('df_polars')
+                            if original_polars is None and df_original is not None:
+                                df_safe = df_original.copy()
+                                for col in df_safe.columns:
+                                    df_safe[col] = df_safe[col].astype(str).replace('nan', None)
+                                original_polars = pl.from_pandas(df_safe)
+                            
+                            cleaned_polars = persistent_results.get('df_clean_polars')
+                            if cleaned_polars is None and df_cleaned is not None:
+                                df_safe = df_cleaned.copy()
+                                for col in df_safe.columns:
+                                    df_safe[col] = df_safe[col].astype(str).replace('nan', None)
+                                cleaned_polars = pl.from_pandas(df_safe)
+                            
+                            st.session_state.chat_original_df = original_polars
+                            st.session_state.chat_cleaned_df = cleaned_polars
+                            st.session_state.chat_cleaning_result = result
+                            st.session_state.global_chat_active = True
+                            st.success("✅ Cleaning data loaded into chat!")
+                            st.rerun()
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error loading data: {e}")
+        else:
+            st.info("💡 Upload and clean data to unlock advanced chat features")
+        
+        st.divider()
+        
+        # Chat history display
+        if 'chat_history' not in st.session_state:
+            st.session_state.chat_history = []
+        
+        # Display recent conversation
+        if st.session_state.chat_history:
+            st.markdown("**Recent Conversation:**")
+            for msg in st.session_state.chat_history[-4:]:  # Show last 4 messages
+                if msg['role'] == 'user':
+                    st.markdown(f"**👤 You:** {msg['content']}")
+                else:
+                    st.markdown(f"**🤖 PriceRe:** {msg['content']}")
+            st.divider()
+        
+        # Chat input
+        user_input = st.text_area(
+            "Ask PriceRe Chat:",
+            placeholder="Ask about data cleaning, reinsurance concepts, platform features...",
+            height=100,
+            key="dialog_chat_input"
+        )
+        
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            if st.button("💬 Send Message", key="dialog_chat_send", type="primary"):
+                if user_input.strip():
+                    # Add user message
+                    st.session_state.chat_history.append({'role': 'user', 'content': user_input})
+                    
+                    # Process message
+                    if has_cleaning_data and st.session_state.get('global_chat_active', False):
+                        try:
+                            from src.chat.streamlit_chat_interface import initialize_chat_assistant, setup_chat_context
+                            
+                            # Initialize chat assistant (uses environment variables)
+                            initialize_chat_assistant()
+                            setup_chat_context(
+                                st.session_state.chat_original_df,
+                                st.session_state.chat_cleaned_df,
+                                st.session_state.chat_cleaning_result
+                            )
+                            
+                            response, action = st.session_state.chat_assistant.process_user_message(user_input)
+                            response_text = response
+                            
+                            if action and action.confidence > 0.6:
+                                response_text += f"\n\n**💡 Suggested Action:** {action.description}"
+                                
+                        except Exception as e:
+                            logger.error(f"Chat processing error: {e}")
+                            response_text = f"I understand you're asking about: '{user_input[:50]}...' Let me help with that."
+                    else:
+                        # Create a simple chat instance for general questions
+                        try:
+                            from src.chat.chat_assistant import PriceReChatAssistant
+                            simple_chat = PriceReChatAssistant()
+                            response_text = simple_chat.process_user_message(user_input)[0]
+                        except Exception as e:
+                            response_text = "I can help with reinsurance questions, platform guidance, and data cleaning concepts. Upload and process data for enhanced features!"
+                    
+                    # Add response
+                    st.session_state.chat_history.append({'role': 'assistant', 'content': response_text})
+                    st.rerun()
+        
+        with col2:
+            if st.button("🗑️ Clear", key="dialog_chat_clear"):
+                st.session_state.chat_history = []
+                st.session_state.global_chat_active = False
+                st.rerun()
+        
+        with col3:
+            if st.button("❌ Close", key="dialog_chat_close"):
+                st.session_state.show_chat_modal = False
+                st.rerun()
+    
+    # Show the dialog
+    chat_dialog()
+
+def render_chat_modal_dialog(has_cleaning_data, persistent_results):
+    """Render chat modal dialog"""
+    
+    # Create modal using Streamlit's dialog-like interface
+    st.markdown("### 💬 PriceRe Chat Assistant")
+    
+    col1, col2 = st.columns([1, 0.1])
+    with col2:
+        if st.button("✖", key="close_chat_modal", help="Close chat"):
+            st.session_state.show_chat_modal = False
+            st.rerun()
+    
+    with col1:
+        st.markdown("**Your AI assistant for data cleaning, reinsurance questions, and platform help.**")
+    
+    # Show cleaning data status
+    if has_cleaning_data:
+        st.success("✅ Cleaning data available - Enhanced chat features enabled")
+        
+        # Load cleaning data button
+        if not st.session_state.get('global_chat_active', False):
+            if st.button("🔄 Load Cleaning Data", key="load_cleaning_chat_modal"):
+                try:
+                    # Safely prepare data for chat (same logic as before)
+                    df_original = persistent_results.get('df_original')
+                    df_cleaned = persistent_results.get('df_cleaned')
+                    result = persistent_results.get('result')
+                    
+                    if df_original is not None and df_cleaned is not None:
+                        # Convert safely
+                        original_polars = persistent_results.get('df_polars')
+                        if original_polars is None and df_original is not None:
+                            df_safe = df_original.copy()
+                            for col in df_safe.columns:
+                                df_safe[col] = df_safe[col].astype(str).replace('nan', None)
+                            original_polars = pl.from_pandas(df_safe)
+                        
+                        cleaned_polars = persistent_results.get('df_clean_polars')
+                        if cleaned_polars is None and df_cleaned is not None:
+                            df_safe = df_cleaned.copy()
+                            for col in df_safe.columns:
+                                df_safe[col] = df_safe[col].astype(str).replace('nan', None)
+                            cleaned_polars = pl.from_pandas(df_safe)
+                        
+                        st.session_state.chat_original_df = original_polars
+                        st.session_state.chat_cleaned_df = cleaned_polars
+                        st.session_state.chat_cleaning_result = result
+                        st.session_state.global_chat_active = True
+                        st.success("✅ Cleaning data loaded into chat!")
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"❌ Error loading data: {e}")
+    else:
+        st.info("💡 Upload and clean data to unlock advanced chat features")
+    
+    # Chat interface
+    st.divider()
+    
+    # Chat history display (if we have conversation)
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    
+    # Display chat history
+    if st.session_state.chat_history:
+        st.markdown("**Conversation:**")
+        for i, msg in enumerate(st.session_state.chat_history[-5:]):  # Show last 5 messages
+            if msg['role'] == 'user':
+                st.markdown(f"**You:** {msg['content']}")
+            else:
+                st.markdown(f"**PriceRe Chat:** {msg['content']}")
+        st.divider()
+    
+    # Chat input
+    user_input = st.text_area(
+        "Ask PriceRe Chat:",
+        placeholder="Ask about data cleaning, reinsurance concepts, platform features, or any questions...",
+        height=100,
+        key="modal_chat_input"
+    )
+    
+    col1, col2, col3 = st.columns([1, 1, 1])
+    
+    with col1:
+        if st.button("💬 Send", key="modal_chat_send"):
+            if user_input.strip():
+                # Add user message to history
+                st.session_state.chat_history.append({'role': 'user', 'content': user_input})
+                
+                # Process the message
+                if has_cleaning_data and st.session_state.get('global_chat_active', False):
+                    # Use cleaning-context chat
+                    try:
+                        from src.chat.streamlit_chat_interface import initialize_chat_assistant, setup_chat_context
+                        initialize_chat_assistant()
+                        setup_chat_context(
+                            st.session_state.chat_original_df,
+                            st.session_state.chat_cleaned_df,
+                            st.session_state.chat_cleaning_result
+                        )
+                        
+                        response, action = st.session_state.chat_assistant.process_user_message(user_input)
+                        response_text = f"{response}"
+                        
+                        if action and action.confidence > 0.6:
+                            response_text += f" **Suggested Action:** {action.description}"
+                            
+                    except Exception as e:
+                        response_text = f"I understand you're asking about: '{user_input[:50]}...' This feature is being developed for comprehensive reinsurance assistance."
+                else:
+                    # General chat response
+                    response_text = "I can help with reinsurance questions, platform guidance, and data cleaning concepts. Upload and clean data for advanced features!"
+                
+                # Add response to history
+                st.session_state.chat_history.append({'role': 'assistant', 'content': response_text})
+                st.rerun()
+    
+    with col2:
+        if st.button("🗑️ Clear", key="modal_chat_clear"):
+            st.session_state.chat_history = []
+            st.session_state.global_chat_active = False
+            if 'chat_assistant' in st.session_state:
+                from src.chat.streamlit_chat_interface import reset_chat_session
+                reset_chat_session()
+            st.rerun()
+    
+    with col3:
+        if st.button("➖ Minimize", key="modal_chat_minimize"):
+            st.session_state.show_chat_modal = False
+            st.rerun()
+
+def restore_persistent_results():
+    """Aggressively restore persistent results on every page load"""
+    try:
+        # Check if we need to restore (session state is empty or suspicious)
+        need_restore = (
+            'latest_cleaning_results' not in st.session_state or
+            not st.session_state.get('latest_cleaning_results')
+        )
+        
+        if need_restore:
+            result_files = list(TEMP_DIR.glob("*_results.pkl"))
+            if result_files:
+                # Get most recently modified
+                latest_file = max(result_files, key=lambda f: f.stat().st_mtime)
+                # Only restore if file is recent (within last hour)
+                file_age = datetime.now().timestamp() - latest_file.stat().st_mtime
+                if file_age < 3600:  # 1 hour
+                    with open(latest_file, 'rb') as f:
+                        results = pickle.load(f)
+                    st.session_state['latest_cleaning_results'] = results
+    except Exception:
+        # Silently fail - don't break the app
+        pass
+
 # Clean, simple styling
 st.markdown("""
 <style>
+/* Remove default Streamlit top margin and padding */
+.main .block-container {
+    padding-top: 0rem;
+    margin-top: 0rem;
+}
+
 /* Clean button styling - consistent colors */
 .stButton > button {
     background-color: #f8f9fa;
@@ -149,6 +578,12 @@ def initialize_comprehensive_state():
     for key, default_value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default_value
+    
+    # Restore persistent results from file system if session state was cleared
+    if 'latest_cleaning_results' not in st.session_state:
+        persistent_results = get_latest_persistent_results()
+        if persistent_results:
+            st.session_state['latest_cleaning_results'] = persistent_results
 
 def initialize_engines_safely():
     """Initialize engines safely when first needed - simplified"""
@@ -172,11 +607,11 @@ def display_main_header():
     """Display main platform header"""
     
     st.markdown("""
-    <div style="padding: 1rem 0; margin-bottom: 2rem;">
-        <h1 style="color: #2c3e50; font-size: 2.5rem; font-weight: 600; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
-            💰 PriceRe
+    <div style="padding: 0; margin: 0; margin-bottom: 0.3rem;">
+        <h1 style="color: #2c3e50; font-size: 1.6rem; font-weight: 600; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+            📊 PriceRe
         </h1>
-        <p style="color: #7f8c8d; font-size: 1.1rem; margin: 0.5rem 0 0 0; font-weight: 400;">
+        <p style="color: #7f8c8d; font-size: 0.8rem; margin: 0; padding: 0; font-weight: 400;">
             Smart Reinsurance Pricing
         </p>
     </div>
@@ -385,6 +820,254 @@ def display_data_explorers():
                         st.dataframe(pd.DataFrame(col_info), use_container_width=True)
                 else:
                     st.info("No datasets uploaded yet. Upload data in Step 1 to explore here.")
+    
+    # Phase 2 Cleaning Explorer
+    if st.session_state.get('show_cleaning_explorer', False):
+        display_phase2_cleaning_explorer()
+
+def display_phase2_cleaning_explorer():
+    """Display Hybrid Data Cleaning System Explorer"""
+    
+    with st.expander("🧹 Hybrid Data Cleaning System", expanded=True):
+        col1, col2 = st.columns([3, 1])
+        
+        with col2:
+            if st.button("❌ Close", key="close_cleaning"):
+                st.session_state.show_cleaning_explorer = False
+                st.rerun()
+        
+        with col1:
+            st.markdown("### 🔬 Zero Hard-Coded Rules Cleaning")
+            st.markdown("**Statistical Content Analysis + Semantic Similarity Detection**")
+            
+            if not PHASE2_CLEANING_AVAILABLE:
+                st.error("❌ Cleaning system not available. Please check imports.")
+                return
+            
+            st.success("✅ Hybrid Cleaning System Ready")
+            st.markdown("🚀 **Progressive Enhancement**: Conservative → Aggressive")
+            st.markdown("📊 **Statistical Analysis**: Content patterns, proximity relationships")  
+            st.markdown("🧠 **Semantic Detection**: Similarity-based outlier detection")
+        
+        # File upload for cleaning
+        st.markdown("#### 📂 Upload File to Clean")
+        uploaded_file = st.file_uploader(
+            "Choose a messy data file",
+            type=['csv', 'xlsx', 'json'],
+            help="Upload files with junk rows, headers, footers, empty data",
+            key="phase2_cleaning_upload"
+        )
+        
+        # Check if there are recent results available
+        result_files = list(TEMP_DIR.glob("*_results.pkl"))
+        if result_files:
+            latest_file = max(result_files, key=lambda f: f.stat().st_mtime)
+            file_age = datetime.now().timestamp() - latest_file.stat().st_mtime
+            
+            # Show "Return to Results" button if there are recent results (within last hour)
+            if file_age < 3600:
+                st.info(f"💡 Recent cleaning results available from {file_age/60:.0f} minutes ago")
+                if st.button("🔄 Return to Previous Results", type="primary"):
+                    st.session_state['show_persistent_results'] = True
+                    st.rerun()
+                st.divider()
+        
+        if uploaded_file is not None:
+            # Create a stable file key that doesn't change on rerun
+            import hashlib
+            file_content = uploaded_file.read()
+            uploaded_file.seek(0)  # Reset file pointer
+            content_hash = hashlib.md5(file_content).hexdigest()[:8]
+            file_key = f"{uploaded_file.name}_{content_hash}"
+            
+            # Check if we just cleaned this file (to avoid showing duplicate results)
+            recently_cleaned = st.session_state.get('latest_cleaning_results', {}).get('file_key') == file_key
+            
+            if not recently_cleaned:
+                # Simplified interface - just one button for cleaning and comparison
+                if st.button("🧹 Clean & Compare Data", type="primary", key="clean_compare_main", use_container_width=True):
+                    clean_and_compare_file(uploaded_file, file_key)
+            
+            # Advanced options (collapsed by default)
+            with st.expander("⚙️ Advanced Options", expanded=False):
+                try:
+                    # Load data for preview
+                    with st.spinner("📖 Loading data..."):
+                        df = read_any_source(uploaded_file)
+                    
+                    col_info1, col_info2, col_mode = st.columns(3)
+                    
+                    with col_info1:
+                        st.metric("Rows", df.shape[0])
+                        
+                    with col_info2:
+                        st.metric("Columns", df.shape[1])
+                    
+                    with col_mode:
+                        processing_mode = st.selectbox(
+                            "Mode",
+                            options=["balanced", "fast", "comprehensive"],
+                            help="Balanced: Statistical+Semantic (recommended)"
+                        )
+                    
+                    # Show preview
+                    with st.expander("👀 Original Data Preview", expanded=False):
+                        st.dataframe(df.head(10), use_container_width=True)
+                    
+                    # Advanced clean button
+                    if st.button("🧹 Advanced Clean", key="phase2_clean_advanced"):
+                        clean_data_phase2(df, uploaded_file.name, processing_mode)
+                        
+                except Exception as e:
+                    st.error(f"❌ Failed to load data: {e}")
+        
+        # Demo section
+        st.markdown("---")
+        st.markdown("#### 🧪 Try Demo")
+        
+        if st.button("🎯 Generate Messy Demo Data", key="phase2_demo"):
+            generate_demo_data_phase2()
+
+def generate_demo_data_phase2():
+    """Generate and clean demo messy data with comparison"""
+    
+    messy_data = {
+        'Policy': ['Insurance Report Q4 2023', '', 'POL001', 'POL002', '', 'TOTAL: 2', 'Generated on 2023-12-01'],
+        'Premium': ['Premium Amount', None, '25000', '18500', '', '43500', 'System Export'],
+        'Age': [None, None, '35', '42', None, None, None],
+        'Status': ['Status', '', 'Active', 'Active', '', 'SUMMARY', 'End Report']
+    }
+    
+    df_demo = pl.DataFrame(messy_data)
+    df_demo_pandas = df_demo.to_pandas()
+    
+    # Immediately clean and show comparison
+    if not PHASE2_CLEANING_AVAILABLE:
+        st.error("❌ Phase 2 cleaning system not available")
+        return
+        
+    with st.spinner("🧹 Cleaning demo data..."):
+        try:
+            # Apply Phase 2 cleaning
+            from src.cleaning.hybrid_detector import create_hybrid_detector
+            detector = create_hybrid_detector('balanced')
+            result = detector.detect_junk_rows(df_demo, return_detailed=True)
+            
+            # Get cleaned dataframe
+            if result.junk_row_indices:
+                mask = pl.Series(range(df_demo.shape[0])).is_in(result.junk_row_indices).not_()
+                df_clean_demo = df_demo.filter(mask)
+                df_cleaned_pandas = df_clean_demo.to_pandas()
+            else:
+                df_cleaned_pandas = df_demo_pandas.copy()
+            
+            # Show results with metrics
+            st.success("✅ Demo cleaning completed!")
+            
+            # Display metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📊 Original Rows", df_demo_pandas.shape[0])
+            with col2:
+                st.metric("✨ Clean Rows", df_cleaned_pandas.shape[0])
+            with col3:
+                st.metric("🗑️ Removed Rows", len(result.junk_row_indices))
+            
+            # Show before/after comparison
+            if len(result.junk_row_indices) > 0:
+                st.subheader("📋 Demo: Before vs After")
+                
+                col_left, col_right = st.columns(2)
+                
+                with col_left:
+                    st.write("**🔴 Original Messy Data**")
+                    st.dataframe(df_demo_pandas, height=400)
+                    
+                with col_right:
+                    st.write("**✅ Cleaned Data**")
+                    st.dataframe(df_cleaned_pandas, height=400)
+                
+                # Show what was removed
+                if st.expander("🗑️ View Removed Junk Rows"):
+                    junk_df_demo = df_demo.filter(pl.Series(range(df_demo.shape[0])).is_in(result.junk_row_indices))
+                    st.dataframe(junk_df_demo.to_pandas())
+                    st.info(f"Removed {len(result.junk_row_indices)} junk rows: {result.junk_row_indices}")
+                    st.markdown("**Layers used:** " + ", ".join(result.layers_used))
+            
+            else:
+                st.info("🎉 No junk rows detected in demo - data is already clean!")
+                st.dataframe(df_cleaned_pandas)
+            
+        except Exception as e:
+            st.error(f"❌ Demo cleaning failed: {e}")
+            # Fallback to showing raw data
+            st.dataframe(df_demo_pandas)
+
+def clean_data_phase2(df, filename, processing_mode):
+    """Clean data with Phase 2 system and show results"""
+    
+    with st.spinner(f"🔬 Cleaning with {processing_mode} mode..."):
+        try:
+            # Create hybrid detector
+            detector = create_hybrid_detector(processing_mode)
+            
+            # Get results
+            result = detector.detect_junk_rows(df, return_detailed=True)
+            
+            # Clean data
+            if result.junk_row_indices:
+                mask = pl.Series(range(df.shape[0])).is_in(result.junk_row_indices).not_()
+                clean_df = df.filter(mask)
+            else:
+                clean_df = df
+            
+            # Results display
+            col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+            
+            with col_r1:
+                st.metric("Original", df.shape[0])
+            with col_r2:
+                st.metric("Clean", clean_df.shape[0])
+            with col_r3:
+                st.metric("Removed", len(result.junk_row_indices))
+            with col_r4:
+                st.metric("Time", f"{result.processing_time:.2f}s")
+            
+            # System details
+            st.markdown(f"**Layers Used**: {', '.join(result.layers_used)}")
+            if result.early_exit_triggered:
+                st.success("🚀 Early exit (high confidence)")
+            
+            # Show removed rows
+            if result.junk_row_indices:
+                with st.expander(f"🗑️ Removed Junk Rows ({len(result.junk_row_indices)})", expanded=False):
+                    junk_df = df.filter(pl.Series(range(df.shape[0])).is_in(result.junk_row_indices))
+                    st.dataframe(junk_df, use_container_width=True)
+                    
+                    # Explanations
+                    st.markdown("**Why removed:**")
+                    for i, idx in enumerate(result.junk_row_indices[:3]):
+                        content = ' | '.join(str(val) for val in df.row(idx))
+                        st.caption(f"Row {idx}: `{content}`")
+            
+            # Clean data preview
+            with st.expander("✨ Clean Data", expanded=True):
+                st.dataframe(clean_df.head(10), use_container_width=True)
+            
+            # Download
+            clean_csv = clean_df.to_pandas().to_csv(index=False)
+            st.download_button(
+                "📥 Download Clean Data",
+                clean_csv,
+                f"clean_{filename}",
+                "text/csv",
+                use_container_width=True
+            )
+            
+            st.success("🎉 Cleaning completed!")
+            
+        except Exception as e:
+            st.error(f"❌ Cleaning failed: {e}")
 
 def display_workflow_progress():
     """Display simple workflow progress"""
@@ -396,12 +1079,21 @@ def display_workflow_progress():
     progress = (current_step - 1) / 4
     st.progress(progress)
     
-    col1, col2 = st.columns([3, 1])
+    # Navigation with both previous and next buttons
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
     with col1:
-        st.markdown(f"**Step {current_step}/5**: {step_names[current_step-1]}")
+        if current_step > 1:
+            if st.button("← Previous", key="prev_step"):
+                st.session_state.workflow_step = current_step - 1
+                st.rerun()
+    
     with col2:
+        st.markdown(f"**Step {current_step}/5**: {step_names[current_step-1]}", unsafe_allow_html=True)
+    
+    with col3:
         if current_step < 5:
-            if st.button("Next Step →", type="primary"):
+            if st.button("Next →", type="primary", key="next_step"):
                 st.session_state.workflow_step = current_step + 1
                 st.rerun()
     
@@ -452,20 +1144,14 @@ def step_1_data_upload():
                     # File info section
                     st.markdown(f"**Size:** {file.size:,} bytes | **Type:** {file.name.split('.')[-1].upper()}")
                     
-                    # Action buttons with proper spacing
-                    col_preview, col_process = st.columns(2)
-                    
-                    with col_preview:
-                        if st.button("👁️ Preview Data", key=f"preview_{file.name}", use_container_width=True):
-                            st.session_state[f"show_preview_{file.name}"] = True
-                            st.rerun()
-                    
-                    with col_process:
-                        if is_processed:
-                            st.success("✅ Processed")
-                        else:
-                            if st.button("🔄 Process & Clean", key=f"process_{file.name}", use_container_width=True):
-                                process_file_intelligently(file)
+                    # Single action button - direct clean & compare
+                    if st.button("🧹 Clean Data & Show Results", key=f"clean_{file.name}", type="primary", use_container_width=True):
+                        import hashlib
+                        file_content = file.read()
+                        file.seek(0)  # Reset file pointer
+                        content_hash = hashlib.md5(file_content).hexdigest()[:8]
+                        file_key = f"{file.name}_{content_hash}"
+                        clean_and_compare_file(file, file_key)
                     
                     # Data preview section
                     if st.session_state.get(f"show_preview_{file.name}", False):
@@ -714,8 +1400,7 @@ def step_1_data_upload():
                         st.markdown("• 🏷️ Categorizes for pricing analysis")
                         
                         st.markdown("")  # Add space
-                        if st.button(f"🚀 Process This File", type="primary", key=f"main_process_{file.name}", use_container_width=True):
-                            process_file_intelligently(file)
+                        # Removed old processing - now only use smart header detection approach
     
     with col2:
         st.markdown("### Data Requirements")
@@ -745,12 +1430,375 @@ def step_1_data_upload():
         else:
             st.info("Upload at least 2 datasets to continue")
 
-def process_file_intelligently(uploaded_file):
-    """Process file using enhanced profiler with professional libraries"""
+def clear_old_cache_files():
+    """Clear old cache files to prevent stale data issues"""
+    try:
+        result_files = list(TEMP_DIR.glob("*_results.pkl"))
+        for file in result_files:
+            file.unlink()
+    except Exception:
+        pass  # Ignore cleanup errors
+
+def clean_and_compare_file(uploaded_file, file_key):
+    """Simplified single-click cleaning with before/after comparison"""
+    
+    if not PHASE2_CLEANING_AVAILABLE:
+        st.error("❌ Phase 2 cleaning system not available")
+        return
+    
+    # Clear old cache files to prevent stale data
+    clear_old_cache_files()
+    
+    with st.spinner(f"🧹 Cleaning and analyzing: {uploaded_file.name}..."):
+        try:
+            # Load file content
+            file_content = uploaded_file.read()
+            uploaded_file.seek(0)
+            
+            # Basic file info
+            file_type = uploaded_file.name.split('.')[-1].lower()
+            
+            # Load as DataFrame
+            if file_type == 'csv':
+                import io
+                df_original = pd.read_csv(io.BytesIO(file_content))
+            elif file_type in ['xlsx', 'xls']:
+                import io
+                df_original = pd.read_excel(io.BytesIO(file_content))
+            elif file_type == 'json':
+                import json
+                data = json.loads(file_content.decode('utf-8'))
+                df_original = pd.DataFrame(data) if isinstance(data, list) else pd.json_normalize(data)
+            else:
+                st.error(f"❌ Unsupported file type: {file_type}")
+                return
+            
+            # Clean the data using Phase 2
+            df_clean = df_original.copy()
+            for col in df_clean.columns:
+                df_clean[col] = df_clean[col].astype(str).replace('nan', None)
+            
+            # Convert to Polars for Phase 2 system
+            df_polars = pl.from_pandas(df_clean)
+            
+            # Apply Phase 2 cleaning with smart header detection
+            from src.cleaning.hybrid_detector import create_hybrid_detector
+            detector = create_hybrid_detector('balanced')
+            result = detector.detect_junk_rows(df_polars, return_detailed=True)
+            
+            # Get cleaned dataframe (header detection happens inside the detector now)
+            if result.header_detection_result:
+                # Use the cleaned dataframe from header detection
+                from src.cleaning.header_detector import detect_and_clean_headers
+                df_clean_polars, header_result = detect_and_clean_headers(df_polars)
+                
+                # Apply additional junk removal to the already header-cleaned data
+                if result.junk_row_indices:
+                    mask = pl.Series(range(df_clean_polars.shape[0])).is_in(result.junk_row_indices).not_()
+                    df_clean_polars = df_clean_polars.filter(mask)
+                
+                df_cleaned = df_clean_polars.to_pandas()
+                
+                # Update metrics to show total removal
+                total_removed_count = len(header_result.rows_to_remove_above) + len(result.junk_row_indices)
+                header_info = f"Header detected at row {header_result.header_row_index}"
+                
+            else:
+                # Fallback to original approach
+                if result.junk_row_indices:
+                    mask = pl.Series(range(df_polars.shape[0])).is_in(result.junk_row_indices).not_()
+                    df_clean_polars = df_polars.filter(mask)
+                    df_cleaned = df_clean_polars.to_pandas()
+                else:
+                    df_cleaned = df_original.copy()
+                
+                total_removed_count = len(result.junk_row_indices)
+                header_info = "No header detection performed"
+            
+            # Store results in session state to persist across reruns
+            cleaning_results = {
+                'df_original': df_original,
+                'df_cleaned': df_cleaned,
+                'result': result,
+                'total_removed_count': total_removed_count,
+                'header_info': header_info if 'header_info' in locals() else "No header detection",
+                'df_polars': df_polars,
+                'df_clean_polars': df_clean_polars if 'df_clean_polars' in locals() else pl.from_pandas(df_cleaned),
+                'uploaded_file_name': uploaded_file.name,
+                'file_type': file_type
+            }
+            st.session_state[f'cleaning_results_{file_key}'] = cleaning_results
+            # Store persistently using both session state AND file system
+            cleaning_results['file_key'] = file_key
+            save_persistent_results(file_key, cleaning_results)
+            
+            # Show the results immediately after cleaning
+            st.session_state['show_persistent_results'] = True
+            
+            # Also integrate with workflow system
+            if 'uploaded_datasets' not in st.session_state:
+                st.session_state['uploaded_datasets'] = {}
+            
+            st.session_state['uploaded_datasets'][file_key] = {
+                'name': uploaded_file.name,
+                'data': df_cleaned,
+                'original_data': df_original,
+                'cleaning_result': result,
+                'file_type': file_type
+            }
+            
+            # Show results with metrics
+            st.success("✅ Cleaning completed!")
+            
+            # Display metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📊 Original Rows", df_original.shape[0])
+            with col2:
+                st.metric("✨ Clean Rows", df_cleaned.shape[0])
+            with col3:
+                st.metric("🗑️ Removed Rows", total_removed_count)
+                
+            # Show the detailed results
+            show_cleaning_results_display(cleaning_results)
+            
+        except Exception as e:
+            st.error(f"❌ Cleaning failed: {e}")
+            st.info("The file might have formatting issues. Try using the advanced processing option.")
+
+def show_persistent_cleaning_results():
+    """Show persistent cleaning results that survive all reruns"""
+    cleaning_results = get_latest_persistent_results()
+    if not cleaning_results:
+        st.warning("No recent cleaning results found")
+        return
+    
+    # Show metrics
+    st.success("✅ Cleaning completed!")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📊 Original Rows", cleaning_results['df_original'].shape[0])
+    with col2:
+        st.metric("✨ Clean Rows", cleaning_results['df_cleaned'].shape[0])
+    with col3:
+        st.metric("🗑️ Removed Rows", cleaning_results['total_removed_count'])
+    
+    # Add "Process New File" button to reset
+    if st.button("🔄 Process New File", type="secondary", use_container_width=True):
+        # Clear the stored results
+        if 'latest_cleaning_results' in st.session_state:
+            del st.session_state['latest_cleaning_results']
+        # Clear chat state
+        if CHAT_ASSISTANT_AVAILABLE:
+            reset_chat_session()
+        st.rerun()
+    
+    # Show the detailed results 
+    show_cleaning_results_display(cleaning_results)
+
+def show_existing_cleaning_results(uploaded_file, file_key):
+    """Show existing cleaning results from session state"""
+    cleaning_results = st.session_state[f'cleaning_results_{file_key}']
+    
+    # Show metrics
+    st.success("✅ Cleaning completed!")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📊 Original Rows", cleaning_results['df_original'].shape[0])
+    with col2:
+        st.metric("✨ Clean Rows", cleaning_results['df_cleaned'].shape[0])
+    with col3:
+        st.metric("🗑️ Removed Rows", cleaning_results['total_removed_count'])
+    
+    # Add "Process New File" button to reset
+    if st.button("🔄 Process New File", type="secondary", use_container_width=True):
+        # Clear the stored results
+        if f'cleaning_results_{file_key}' in st.session_state:
+            del st.session_state[f'cleaning_results_{file_key}']
+        # Clear chat state
+        if CHAT_ASSISTANT_AVAILABLE:
+            reset_chat_session()
+        st.rerun()
+    
+    # Show the detailed results 
+    show_cleaning_results_display(cleaning_results)
+
+def show_cleaning_results_display(cleaning_results):
+    """Display the cleaning results (used by both new and existing results)"""
+    df_original = cleaning_results['df_original']
+    df_cleaned = cleaning_results['df_cleaned'] 
+    result = cleaning_results['result']
+    total_removed_count = cleaning_results['total_removed_count']
+    header_info = cleaning_results['header_info']
+    file_type = cleaning_results.get('file_type', 'csv')  # Default to csv if not found
+    uploaded_file_name = cleaning_results.get('uploaded_file_name', 'cleaned_data')
+    
+    # Show header detection info
+    if result.header_detection_result:
+        st.info(f"🎯 {header_info} (confidence: {result.header_detection_result.confidence:.2f})")
+    
+    # Show before/after comparison  
+    if total_removed_count > 0:
+        st.subheader("📋 Before vs After Comparison")
+        
+        col_left, col_right = st.columns(2)
+        
+        with col_left:
+            st.write("**🔴 Original Data (with junk)**")
+            st.dataframe(df_original.head(20), height=400)
+            
+        with col_right:
+            st.write("**✅ Cleaned Data**")
+            st.dataframe(df_cleaned.head(20), height=400)
+        
+        # Show detailed change log and removed content
+        with st.expander("📋 Detailed Change Log", expanded=False):
+            # Header detection details
+            if result.header_detection_result:
+                st.markdown("### 🎯 Header Detection Results")
+                st.markdown(f"**Header found at row:** {result.header_detection_result.header_row_index}")
+                st.markdown(f"**Confidence:** {result.header_detection_result.confidence:.2f}")
+                st.markdown(f"**Column names detected:** {', '.join(result.header_detection_result.column_names[:5])}...")
+                
+                if result.header_detection_result.rows_to_remove_above:
+                    st.markdown(f"**Junk rows removed above header:** {len(result.header_detection_result.rows_to_remove_above)}")
+                    
+                    # Show removed header junk
+                    st.markdown("#### 🗑️ Removed Header Junk:")
+                    header_junk_df = df_original.iloc[result.header_detection_result.rows_to_remove_above]
+                    st.dataframe(header_junk_df, use_container_width=True)
+                    
+                    # Additional junk removal details
+                    if len(result.junk_row_indices) > 0:
+                        st.markdown("### 🧹 Additional Junk Detection")
+                        st.markdown(f"**Layers used:** {', '.join(result.layers_used)}")
+                        st.markdown(f"**Processing time:** {result.processing_time:.3f}s")
+                        st.markdown(f"**Additional junk rows:** {len(result.junk_row_indices)}")
+                        
+                        # Show additional removed junk (from cleaned data)
+                        if result.header_detection_result:
+                            # Calculate indices in cleaned data context
+                            cleaned_junk_start_row = result.header_detection_result.header_row_index + 1
+                            original_junk_indices = [idx + cleaned_junk_start_row for idx in result.junk_row_indices]
+                            additional_junk_df = df_original.iloc[original_junk_indices]
+                        else:
+                            additional_junk_df = df_original.iloc[result.junk_row_indices]
+                        
+                        st.markdown("#### 🗑️ Additional Junk Removed:")
+                        st.dataframe(additional_junk_df, use_container_width=True)
+                    
+                    # Summary
+                    st.markdown("### 📊 Cleaning Summary")
+                    st.markdown(f"**Total rows processed:** {df_original.shape[0]}")
+                    st.markdown(f"**Total rows removed:** {total_removed_count}")
+                    st.markdown(f"**Final clean rows:** {df_cleaned.shape[0]}")
+                    st.markdown(f"**Data quality improvement:** {(total_removed_count/df_original.shape[0]*100):.1f}% junk removed")
+            
+            else:
+                st.info("🎉 No junk rows detected - your data is already clean!")
+                st.dataframe(df_cleaned.head(20))
+            
+            # Comprehensive download options
+            st.markdown("### 💾 Download Options")
+            
+            col_dl1, col_dl2 = st.columns(2)
+            
+            with col_dl1:
+                st.markdown("#### 📄 Cleaned Data Only")
+                if file_type == 'csv':
+                    csv_data = df_cleaned.to_csv(index=False)
+                    st.download_button(
+                        label="📥 CSV",
+                        data=csv_data,
+                        file_name=f"cleaned_{uploaded_file_name}",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                elif file_type in ['xlsx', 'xls']:
+                    import io
+                    buffer = io.BytesIO()
+                    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                        df_cleaned.to_excel(writer, sheet_name='Cleaned Data', index=False)
+                    st.download_button(
+                        label="📥 Excel",
+                        data=buffer.getvalue(),
+                        file_name=f"cleaned_{uploaded_file_name}",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+            
+            with col_dl2:
+                st.markdown("#### 📦 Complete Package")
+                # Create comprehensive Excel with multiple sheets
+                import io
+                buffer = io.BytesIO()
+                base_name = uploaded_file_name.rsplit('.', 1)[0]
+                
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    # Sheet 1: Cleaned data
+                    df_cleaned.to_excel(writer, sheet_name='Cleaned Data', index=False)
+                    
+                    # Sheet 2: Original data
+                    df_original.to_excel(writer, sheet_name='Original Data', index=False)
+                    
+                    # Sheet 3: Change log
+                    change_log_data = []
+                    if result.header_detection_result:
+                        change_log_data.extend([
+                            ['Header Detection', f'Found at row {result.header_detection_result.header_row_index}', f'Confidence: {result.header_detection_result.confidence:.2f}'],
+                            ['Columns Detected', ', '.join(result.header_detection_result.column_names), ''],
+                            ['Header Junk Removed', len(result.header_detection_result.rows_to_remove_above), f'Rows: {result.header_detection_result.rows_to_remove_above}']
+                        ])
+                    
+                    change_log_data.extend([
+                        ['Additional Junk Removed', len(result.junk_row_indices), f'Rows: {result.junk_row_indices}'],
+                        ['Layers Used', ', '.join(result.layers_used), ''],
+                        ['Processing Time', f'{result.processing_time:.3f}s', ''],
+                        ['Total Original Rows', df_original.shape[0], ''],
+                        ['Total Clean Rows', df_cleaned.shape[0], ''],
+                        ['Total Removed', total_removed_count, ''],
+                        ['Quality Improvement', f'{(total_removed_count/df_original.shape[0]*100):.1f}% junk removed', '']
+                    ])
+                    
+                    change_log_df = pd.DataFrame(change_log_data, columns=['Metric', 'Value', 'Details'])
+                    change_log_df.to_excel(writer, sheet_name='Change Log', index=False)
+                    
+                    # Sheet 4: Removed junk (if any)
+                    if result.header_detection_result and result.header_detection_result.rows_to_remove_above:
+                        header_junk = df_original.iloc[result.header_detection_result.rows_to_remove_above]
+                        header_junk.to_excel(writer, sheet_name='Removed Header Junk', index=True)
+                    
+                    if len(result.junk_row_indices) > 0:
+                        if result.header_detection_result:
+                            # Additional junk from cleaned data context
+                            cleaned_junk_start = result.header_detection_result.header_row_index + 1
+                            original_junk_indices = [idx + cleaned_junk_start for idx in result.junk_row_indices]
+                            additional_junk = df_original.iloc[original_junk_indices]
+                        else:
+                            additional_junk = df_original.iloc[result.junk_row_indices]
+                        additional_junk.to_excel(writer, sheet_name='Removed Additional Junk', index=True)
+                
+                st.download_button(
+                    label="📦 Complete Package",
+                    data=buffer.getvalue(),
+                    file_name=f"{base_name}_CLEANED_COMPLETE.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    help="Raw + Clean + Change Log + Removed Data"
+                )
+            
+            # Note: PriceRe Chat is now available globally in the sidebar
+
+# Removed old conservative cleaning function - now using only smart header detection
+
+def process_file_with_enterprise_profiler(uploaded_file):
+    """Process file using Great Expectations enterprise profiler with fallback options"""
     
     file_key = uploaded_file.name.replace('.', '_').replace('-', '_')
     
-    with st.spinner(f"🔍 Analyzing with Enhanced Profiler: {uploaded_file.name}..."):
+    with st.spinner(f"🔍 Analyzing with Enterprise Profiler: {uploaded_file.name}..."):
         try:
             # Load file content
             file_content = uploaded_file.read()
@@ -773,53 +1821,143 @@ def process_file_intelligently(uploaded_file):
             else:
                 raise ValueError(f"Unsupported file type: {file_type}")
             
-            # Use Enhanced Profiler if available
-            if ENHANCED_PROFILER_AVAILABLE:
+            # Apply Phase 2 hybrid cleaning (our main cleaning system)
+            if PHASE2_CLEANING_AVAILABLE:
+                st.info("🧹 Applying Hybrid Cleaning (Statistical + Semantic)...")
+                
+                try:
+                    # Clean data types before conversion to avoid mixed type issues
+                    df_clean = df.copy()
+                    for col in df_clean.columns:
+                        # Convert all columns to string to avoid mixed type issues with messy data
+                        df_clean[col] = df_clean[col].astype(str).replace('nan', None)
+                    
+                    # Convert to Polars for our Phase 2 system
+                    df_polars = pl.from_pandas(df_clean)
+                    
+                except Exception as e:
+                    st.error(f"❌ Data conversion failed: {e}")
+                    st.info("Trying alternative approach...")
+                    try:
+                        # Alternative: Use our universal data source reader
+                        # Save to temporary CSV and read back
+                        import tempfile
+                        import os
+                        
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as tmp:
+                            df.to_csv(tmp.name, index=False)
+                            df_polars = read_any_source(tmp.name)
+                            os.unlink(tmp.name)
+                    except Exception as e2:
+                        st.error(f"❌ Alternative conversion also failed: {e2}")
+                        st.warning("⚠️ Skipping cleaning due to data format issues")
+                        df_polars = None
+                
+                # Apply Phase 2 cleaning if conversion succeeded
+                if df_polars is not None:
+                    detector = create_hybrid_detector('balanced')
+                    result = detector.detect_junk_rows(df_polars, return_detailed=True)
+                    
+                    if result.junk_row_indices:
+                        st.success(f"✅ Removed {len(result.junk_row_indices)} junk rows!")
+                        st.info(f"🔬 Layers used: {', '.join(result.layers_used)}")
+                        st.info(f"⚡ Processing time: {result.processing_time:.3f}s")
+                        
+                        # Show what was removed
+                        with st.expander(f"🗑️ Removed Junk Rows ({len(result.junk_row_indices)})", expanded=False):
+                            junk_df_polars = df_polars.filter(pl.Series(range(df_polars.shape[0])).is_in(result.junk_row_indices))
+                            st.dataframe(junk_df_polars.to_pandas())
+                        
+                        # Clean the data
+                        mask = pl.Series(range(df_polars.shape[0])).is_in(result.junk_row_indices).not_()
+                        clean_df_polars = df_polars.filter(mask)
+                        
+                        # Convert back to pandas for the rest of the pipeline
+                        df = clean_df_polars.to_pandas()
+                        st.success(f"📊 Clean data: {df.shape[0]} rows × {df.shape[1]} columns")
+                    else:
+                        st.info("✅ No junk rows detected - data already clean!")
+            else:
+                st.warning("⚠️ Phase 2 cleaning system not available - proceeding without cleaning")
+            
+            # THEN: Try Great Expectations Enterprise Profiler
+            if ENTERPRISE_PROFILER_AVAILABLE:
                 try:
                     # Add memory check for large files
-                    if len(df) > 10000:
-                        st.warning("⚠️ Large dataset detected - using optimized processing")
+                    if len(df) > 50000:
+                        st.warning("⚠️ Large dataset detected - using optimized enterprise processing")
                     
-                    profiler = EnhancedDataProfiler()
-                    profile = profiler.profile_data(df)
+                    profiler = SimpleGreatExpectationsProfiler()
                     
-                    # Extract enhanced profiler results
-                    data_quality = profile['data_quality']['overall_completeness']
-                    quality_score = int(data_quality)
-                    
-                    # Determine data type based on column analysis
+                    # Determine target column for analysis
                     columns = list(df.columns)
-                    if any('policy' in col.lower() for col in columns):
+                    target_column = None
+                    for col in columns:
+                        if any(keyword in col.lower() for keyword in ['premium', 'amount', 'claim', 'value', 'price']):
+                            target_column = col
+                            break
+                    
+                    # Generate enterprise profile
+                    profile = profiler.generate_enterprise_profile(df, target_column)
+                    
+                    # Extract enterprise profiler results
+                    enterprise_summary = profile['enterprise_summary']
+                    quality_score = int(enterprise_summary['data_quality_score'])
+                    
+                    # Determine data type based on business rules validation
+                    business_validation = profile['business_rules_validation']
+                    if business_validation['data_domain'] == 'insurance_policy':
                         data_type = 'Insurance Policy Data'
-                    elif any('claim' in col.lower() for col in columns):
+                    elif business_validation['data_domain'] == 'claims':
                         data_type = 'Claims Data'
-                    elif any('mortality' in col.lower() or 'death' in col.lower() for col in columns):
+                    elif business_validation['data_domain'] == 'mortality':
                         data_type = 'Mortality Data'
+                    elif business_validation['data_domain'] == 'financial':
+                        data_type = 'Financial Data'
                     else:
-                        data_type = 'Other Insurance Data'
+                        data_type = 'Insurance Data'
                     
-                    # Create issues summary
-                    issues_count = len(profile['recommendations'])
-                    structural_issues = len(profile['structural_issues'])
+                    # Create comprehensive issues summary
+                    quality_issues = enterprise_summary['data_quality_issues']
+                    compliance_issues = len([issue for issue in profile['regulatory_compliance']['compliance_status'] if not issue['compliant']])
+                    risk_indicators = len(profile['risk_indicators'])
                     
-                    if issues_count > 5:
-                        issues_summary = f"🟡 {issues_count} data quality issues found"
-                    elif issues_count > 0:
-                        issues_summary = f"🟢 {issues_count} minor issues detected"
+                    total_issues = quality_issues + compliance_issues + risk_indicators
+                    
+                    if total_issues > 10:
+                        issues_summary = f"🔴 {total_issues} critical issues found (Quality: {quality_issues}, Compliance: {compliance_issues}, Risk: {risk_indicators})"
+                    elif total_issues > 5:
+                        issues_summary = f"🟡 {total_issues} issues detected (Quality: {quality_issues}, Compliance: {compliance_issues}, Risk: {risk_indicators})"
+                    elif total_issues > 0:
+                        issues_summary = f"🟢 {total_issues} minor issues (Quality: {quality_issues}, Compliance: {compliance_issues})"
                     else:
-                        issues_summary = "🟢 Excellent data quality"
+                        issues_summary = "🟢 Enterprise-grade data quality - no issues detected!"
                     
-                    if structural_issues > 0:
-                        issues_summary += f", {structural_issues} structural issues"
-                    
-                    # Create actionable recommendations
+                    # Create actionable recommendations from all sources
                     recommendations = []
-                    for rec in profile['recommendations'][:5]:  # Top 5 recommendations
-                        recommendations.append(f"• {rec['recommendation']}: {rec['issue']}")
                     
-                    recommendations_text = "\n".join(recommendations) if recommendations else "No immediate actions needed"
+                    # Data quality recommendations
+                    for issue in profile['data_quality_metrics']['failed_expectations'][:3]:
+                        recommendations.append(f"• Quality: {issue['expectation_type']} failed - {issue.get('description', 'Review data')})")
                     
-                    # Store enhanced profile data (with error handling)
+                    # Business rule recommendations
+                    for rule, result in business_validation['validation_results'].items():
+                        if not result['passed'] and len(recommendations) < 5:
+                            recommendations.append(f"• Business Rule: {rule} - {result['message']}")
+                    
+                    # Compliance recommendations
+                    for compliance in profile['regulatory_compliance']['compliance_status']:
+                        if not compliance['compliant'] and len(recommendations) < 5:
+                            recommendations.append(f"• Compliance: {compliance['requirement']} - {compliance['issue']}")
+                    
+                    # Risk indicators
+                    for risk in profile['risk_indicators'][:2]:
+                        if len(recommendations) < 5:
+                            recommendations.append(f"• Risk: {risk['type']} - {risk['description']}")
+                    
+                    recommendations_text = "\n".join(recommendations) if recommendations else "Enterprise validation passed - no immediate actions needed"
+                    
+                    # Store enterprise profile data
                     try:
                         st.session_state.uploaded_datasets[file_key] = {
                             'filename': uploaded_file.name,
@@ -829,8 +1967,11 @@ def process_file_intelligently(uploaded_file):
                             'records': len(df),
                             'issues': issues_summary,
                             'recommendations': recommendations_text,
-                            'enhanced_profile': profile,  # Store full profile
-                            'profiler': profiler  # Store profiler instance
+                            'enterprise_profile': profile,  # Store full enterprise profile
+                            'profiler_type': 'great_expectations',
+                            'target_column': target_column,
+                            'compliance_score': enterprise_summary.get('compliance_score', 0),
+                            'risk_score': enterprise_summary.get('risk_score', 0)
                         }
                     except Exception as session_error:
                         st.error(f"Session storage failed: {session_error}")
@@ -845,20 +1986,87 @@ def process_file_intelligently(uploaded_file):
                             'recommendations': recommendations_text
                         }
                     
-                    st.success(f"✅ Enhanced Analysis Complete: {quality_score}% quality, {issues_count} issues identified")
+                    st.success(f"✅ Enterprise Analysis Complete: {quality_score}% quality, {total_issues} issues identified, Compliance: {enterprise_summary.get('compliance_score', 0)}%")
                     
-                except Exception as enhanced_error:
-                    st.warning(f"Enhanced profiler failed, using fallback: {enhanced_error}")
-                    # Fallback to basic processing
-                    process_file_basic_fallback(uploaded_file, df, file_key, file_type)
+                except Exception as enterprise_error:
+                    st.warning(f"Great Expectations profiler failed, trying enhanced profiler: {enterprise_error}")
+                    # Fallback to enhanced profiler
+                    process_with_enhanced_profiler(uploaded_file, df, file_key, file_type)
+            
+            # Fallback to Enhanced Profiler
+            elif ENHANCED_PROFILER_AVAILABLE:
+                process_with_enhanced_profiler(uploaded_file, df, file_key, file_type)
+            
+            # Final fallback to basic processing
             else:
-                # Fallback to basic processing
                 process_file_basic_fallback(uploaded_file, df, file_key, file_type)
             
         except Exception as e:
             st.error(f"❌ Processing failed: {str(e)}")
             import traceback
             st.error(traceback.format_exc())
+
+def process_with_enhanced_profiler(uploaded_file, df, file_key, file_type):
+    """Process with enhanced profiler as fallback from Great Expectations"""
+    try:
+        profiler = EnhancedDataProfiler()
+        profile = profiler.profile_data(df)
+        
+        # Extract enhanced profiler results
+        data_quality = profile['data_quality']['overall_completeness']
+        quality_score = int(data_quality)
+        
+        # Determine data type based on column analysis
+        columns = list(df.columns)
+        if any('policy' in col.lower() for col in columns):
+            data_type = 'Insurance Policy Data'
+        elif any('claim' in col.lower() for col in columns):
+            data_type = 'Claims Data'
+        elif any('mortality' in col.lower() or 'death' in col.lower() for col in columns):
+            data_type = 'Mortality Data'
+        else:
+            data_type = 'Other Insurance Data'
+        
+        # Create issues summary
+        issues_count = len(profile['recommendations'])
+        structural_issues = len(profile['structural_issues'])
+        
+        if issues_count > 5:
+            issues_summary = f"🟡 {issues_count} data quality issues found"
+        elif issues_count > 0:
+            issues_summary = f"🟢 {issues_count} minor issues detected"
+        else:
+            issues_summary = "🟢 Excellent data quality"
+        
+        if structural_issues > 0:
+            issues_summary += f", {structural_issues} structural issues"
+        
+        # Create actionable recommendations
+        recommendations = []
+        for rec in profile['recommendations'][:5]:  # Top 5 recommendations
+            recommendations.append(f"• {rec['recommendation']}: {rec['issue']}")
+        
+        recommendations_text = "\n".join(recommendations) if recommendations else "No immediate actions needed"
+        
+        # Store enhanced profile data
+        st.session_state.uploaded_datasets[file_key] = {
+            'filename': uploaded_file.name,
+            'data_type': data_type,
+            'data': df,
+            'quality_score': quality_score,
+            'records': len(df),
+            'issues': issues_summary,
+            'recommendations': recommendations_text,
+            'enhanced_profile': profile,
+            'profiler_type': 'enhanced',
+            'profiler': profiler
+        }
+        
+        st.success(f"✅ Enhanced Analysis Complete: {quality_score}% quality, {issues_count} issues identified")
+        
+    except Exception as enhanced_error:
+        st.warning(f"Enhanced profiler failed, using basic fallback: {enhanced_error}")
+        process_file_basic_fallback(uploaded_file, df, file_key, file_type)
 
 def process_file_basic_fallback(uploaded_file, df, file_key, file_type):
     """Fallback processing when enhanced profiler isn't available"""
@@ -896,14 +2104,48 @@ def step_2_intelligent_analysis():
     
     st.markdown("## 🧠 Process & Analyze Data")
     
-    datasets = st.session_state.uploaded_datasets
+    # Check for both old workflow datasets AND new persistent results
+    datasets = st.session_state.get('uploaded_datasets', {})
+    persistent_results = get_latest_persistent_results()
     
-    if not datasets:
+    # Debug info for troubleshooting (can remove later)
+    if st.checkbox("Show debug info", value=False):
+        st.write("Current uploaded_datasets:", list(datasets.keys()) if datasets else "None")
+        st.write("Persistent results available:", bool(persistent_results))
+        if persistent_results:
+            st.write("Persistent file name:", persistent_results.get('uploaded_file_name', 'Unknown'))
+        
+        if st.button("🗑️ Clear Cache", key="clear_cache_debug"):
+            clear_old_cache_files()
+            st.session_state.uploaded_datasets = {}
+            st.session_state.latest_cleaning_results = {}
+            st.success("Cache cleared!")
+            st.rerun()
+    
+    if not datasets and not persistent_results:
         st.warning("No datasets uploaded. Return to Step 1.")
         if st.button("← Back to Upload"):
             st.session_state.workflow_step = 1
             st.rerun()
         return
+    
+    # If we have persistent results but no workflow datasets, integrate them
+    if persistent_results and not datasets:
+        st.info("✅ Found recent cleaning results - integrating into workflow")
+        # Create a synthetic dataset entry from persistent results
+        file_key = persistent_results.get('file_key', 'cleaned_data')
+        datasets[file_key] = {
+            'name': persistent_results.get('uploaded_file_name', 'Cleaned Data'),
+            'filename': persistent_results.get('uploaded_file_name', 'Cleaned Data'),
+            'data': persistent_results.get('df_cleaned'),
+            'original_data': persistent_results.get('df_original'),
+            'cleaning_result': persistent_results.get('result'),
+            'file_type': persistent_results.get('file_type', 'unknown'),
+            'data_type': persistent_results.get('file_type', 'cleaned_dataset'),
+            'quality_score': 85  # Default quality score for cleaned data
+        }
+        st.session_state.uploaded_datasets = datasets
+        st.success("🎉 Cleaning results integrated into workflow!")
     
     # Display datasets summary
     st.markdown("### 📊 Uploaded Datasets")
@@ -1381,6 +2623,12 @@ def display_sidebar():
         st.session_state.show_data_explorer = True
         st.rerun()
     
+    # Intelligent Data Cleaning
+    if PHASE2_CLEANING_AVAILABLE:
+        if st.sidebar.button("🧹 Clean Data", help="Hybrid Statistical+Semantic Cleaning", width="stretch"):
+            st.session_state.show_cleaning_explorer = True
+            st.rerun()
+    
     st.sidebar.markdown("---")
     st.sidebar.markdown("## 🚀 Steps")
     
@@ -1404,11 +2652,7 @@ def display_sidebar():
                 st.rerun()
 
 def display_comprehensive_quality_report(df, filename, file_key):
-    """Display enhanced data quality report using professional libraries"""
-    
-    if not ENHANCED_PROFILER_AVAILABLE and not COMPREHENSIVE_PROFILER_AVAILABLE:
-        st.error("Data profiling not available - missing required libraries")
-        return
+    """Display enterprise data quality report with Great Expectations or fallback options"""
     
     # Close button
     if st.button("❌ Close Quality Report", key=f"close_quality_report_{file_key}"):
@@ -1416,23 +2660,175 @@ def display_comprehensive_quality_report(df, filename, file_key):
         st.rerun()
     
     st.markdown("---")
-    st.markdown(f"## 📋 Data Quality Report: {filename}")
+    st.markdown(f"## 📋 Enterprise Data Quality Report: {filename}")
     
-    # Generate enhanced profile
-    with st.spinner("Analyzing data quality with professional libraries..."):
-        if ENHANCED_PROFILER_AVAILABLE:
-            profiler = EnhancedDataProfiler()
-            profile = profiler.profile_data(df)
-        else:
-            # Fallback to old profiler
-            profiler = ComprehensiveDataProfiler()  
-            profile = profiler.profile_dataset(df, filename)
+    # Check if we already have a profile stored from upload
+    dataset_info = st.session_state.uploaded_datasets.get(file_key.replace('.', '_').replace('-', '_'))
     
-    # Display results differently based on profiler type
-    if ENHANCED_PROFILER_AVAILABLE:
-        display_enhanced_quality_results(profile, df, filename, file_key, profiler)
+    if dataset_info and dataset_info.get('enterprise_profile'):
+        # Use stored Great Expectations profile
+        profile = dataset_info['enterprise_profile']
+        display_enterprise_quality_results(profile, df, filename, file_key)
+    elif dataset_info and dataset_info.get('enhanced_profile'):
+        # Use stored enhanced profile
+        profile = dataset_info['enhanced_profile']
+        display_enhanced_quality_results(profile, df, filename, file_key, dataset_info.get('profiler'))
     else:
-        display_legacy_quality_results(profile)
+        # Generate new profile
+        with st.spinner("Analyzing data quality with enterprise-grade validation..."):
+            if ENTERPRISE_PROFILER_AVAILABLE:
+                profiler = SimpleGreatExpectationsProfiler()
+                # Detect target column
+                columns = list(df.columns)
+                target_column = None
+                for col in columns:
+                    if any(keyword in col.lower() for keyword in ['premium', 'amount', 'claim', 'value', 'price']):
+                        target_column = col
+                        break
+                profile = profiler.generate_enterprise_profile(df, target_column)
+                display_enterprise_quality_results(profile, df, filename, file_key)
+            elif ENHANCED_PROFILER_AVAILABLE:
+                profiler = EnhancedDataProfiler()
+                profile = profiler.profile_data(df)
+                display_enhanced_quality_results(profile, df, filename, file_key, profiler)
+            elif COMPREHENSIVE_PROFILER_AVAILABLE:
+                profiler = ComprehensiveDataProfiler()  
+                profile = profiler.profile_dataset(df, filename)
+                display_legacy_quality_results(profile)
+            else:
+                st.error("❌ No data profiling libraries available - please install requirements")
+
+def display_enterprise_quality_results(profile, df, filename, file_key):
+    """Display results from Great Expectations enterprise profiler"""
+    
+    enterprise_summary = profile['enterprise_summary']
+    
+    # Enterprise-level quality metrics
+    col_ent1, col_ent2, col_ent3, col_ent4 = st.columns(4)
+    
+    with col_ent1:
+        quality_score = enterprise_summary['data_quality_score']
+        quality_color = "🟢" if quality_score >= 85 else "🟡" if quality_score >= 70 else "🔴"
+        st.metric("Quality Score", f"{quality_score}%", delta_color="normal")
+        st.caption(f"{quality_color} Enterprise Grade")
+    
+    with col_ent2:
+        compliance_score = enterprise_summary.get('compliance_score', 0)
+        compliance_color = "🟢" if compliance_score >= 90 else "🟡" if compliance_score >= 75 else "🔴"
+        st.metric("Compliance", f"{compliance_score}%", delta_color="normal")
+        st.caption(f"{compliance_color} Regulatory")
+    
+    with col_ent3:
+        risk_score = enterprise_summary.get('risk_score', 0)
+        risk_color = "🟢" if risk_score <= 20 else "🟡" if risk_score <= 50 else "🔴"
+        st.metric("Risk Score", f"{risk_score}%", delta_color="inverse")
+        st.caption(f"{risk_color} Risk Level")
+    
+    with col_ent4:
+        data_quality_issues = enterprise_summary['data_quality_issues']
+        st.metric("Issues", data_quality_issues, delta_color="inverse")
+        st.caption("🔍 Detected")
+    
+    # Business Rules Validation
+    st.markdown("### 🏢 Business Rules Validation")
+    business_validation = profile['business_rules_validation']
+    
+    col_biz1, col_biz2 = st.columns(2)
+    
+    with col_biz1:
+        st.markdown(f"**Data Domain:** {business_validation['data_domain'].replace('_', ' ').title()}")
+        st.markdown(f"**Business Context:** {business_validation['business_context']}")
+    
+    with col_biz2:
+        passed_rules = sum(1 for rule in business_validation['validation_results'].values() if rule['passed'])
+        total_rules = len(business_validation['validation_results'])
+        st.metric("Rules Passed", f"{passed_rules}/{total_rules}")
+        
+        if passed_rules < total_rules:
+            st.error("❌ Some business rules failed validation")
+            for rule_name, result in business_validation['validation_results'].items():
+                if not result['passed']:
+                    st.caption(f"• {rule_name}: {result['message']}")
+    
+    # Regulatory Compliance
+    st.markdown("### ⚖️ Regulatory Compliance")
+    compliance = profile['regulatory_compliance']
+    
+    compliant_items = sum(1 for item in compliance['compliance_status'] if item['compliant'])
+    total_items = len(compliance['compliance_status'])
+    
+    if total_items > 0:
+        col_comp1, col_comp2 = st.columns(2)
+        
+        with col_comp1:
+            st.metric("Compliance Rate", f"{compliant_items}/{total_items}")
+        
+        with col_comp2:
+            if compliant_items < total_items:
+                st.warning("⚠️ Compliance Issues Detected")
+                for item in compliance['compliance_status']:
+                    if not item['compliant']:
+                        st.caption(f"• {item['requirement']}: {item['issue']}")
+    
+    # Risk Indicators
+    st.markdown("### ⚠️ Risk Indicators")
+    risk_indicators = profile['risk_indicators']
+    
+    if risk_indicators:
+        for risk in risk_indicators:
+            severity_color = "🔴" if risk['severity'] == 'high' else "🟡" if risk['severity'] == 'medium' else "🟢"
+            st.markdown(f"{severity_color} **{risk['type'].replace('_', ' ').title()}**: {risk['description']}")
+            if 'recommendation' in risk:
+                st.caption(f"   Recommendation: {risk['recommendation']}")
+    else:
+        st.success("🟢 No significant risk indicators detected")
+    
+    # Data Quality Metrics
+    st.markdown("### 📊 Data Quality Details")
+    quality_metrics = profile['data_quality_metrics']
+    
+    col_qual1, col_qual2 = st.columns(2)
+    
+    with col_qual1:
+        st.markdown("**Passed Expectations:**")
+        passed_expectations = quality_metrics.get('passed_expectations', [])
+        for expectation in passed_expectations[:5]:
+            st.success(f"✅ {expectation.get('expectation_type', 'Validation passed')}")
+    
+    with col_qual2:
+        st.markdown("**Failed Expectations:**")
+        failed_expectations = quality_metrics.get('failed_expectations', [])
+        for expectation in failed_expectations[:5]:
+            st.error(f"❌ {expectation.get('expectation_type', 'Validation failed')}")
+            if 'observed_value' in expectation:
+                st.caption(f"   Observed: {expectation['observed_value']}")
+    
+    # Professional Recommendations
+    st.markdown("### 💡 Enterprise Recommendations")
+    recommendations = []
+    
+    # Add quality-based recommendations
+    if quality_score < 80:
+        recommendations.append("🔧 **Data Quality**: Implement comprehensive data cleaning pipeline")
+    
+    # Add compliance-based recommendations  
+    if compliance_score < 90:
+        recommendations.append("⚖️ **Compliance**: Address regulatory compliance gaps before production")
+    
+    # Add risk-based recommendations
+    if risk_score > 30:
+        recommendations.append("⚠️ **Risk Management**: Implement additional data validation controls")
+    
+    # Add business rule recommendations
+    failed_business_rules = [name for name, result in business_validation['validation_results'].items() if not result['passed']]
+    if failed_business_rules:
+        recommendations.append(f"🏢 **Business Rules**: Fix validation failures in {', '.join(failed_business_rules[:3])}")
+    
+    if recommendations:
+        for rec in recommendations:
+            st.markdown(rec)
+    else:
+        st.success("🌟 Enterprise-grade data - ready for production use!")
 
 def display_enhanced_quality_results(profile, df, filename, file_key, profiler):
     """Display results from enhanced profiler using professional libraries"""
@@ -1681,11 +3077,49 @@ def main():
     # Initialize
     initialize_comprehensive_state()
     
+    # ALWAYS restore persistent results on page load (aggressive approach)
+    restore_persistent_results()
+    
     # Sidebar
     display_sidebar()
     
     # Header
     display_main_header()
+    
+    # Floating PriceRe Chat Widget - Available throughout the platform
+    if CHAT_ASSISTANT_AVAILABLE:
+        render_floating_chat_widget()
+    
+    # Check if user explicitly wants to return to recent results
+    # Only show persistent results if user has clicked "Return to Results" 
+    if st.session_state.get('show_persistent_results', False):
+        persistent_results = get_latest_persistent_results()
+        if persistent_results:
+            st.success("🎉 Cleaning Results Available - Persistent Storage Working")
+            show_persistent_cleaning_results()
+            
+            # Debug info for troubleshooting
+            if st.sidebar.checkbox("🔧 Persistence Debug", value=False):
+                result_files = list(TEMP_DIR.glob("*_results.pkl"))
+                latest_file = max(result_files, key=lambda f: f.stat().st_mtime) if result_files else None
+                st.sidebar.write(f"**Session keys:** {len(st.session_state.keys())}")
+                st.sidebar.write(f"**Files found:** {len(result_files)}")
+                if latest_file:
+                    st.sidebar.write(f"**Latest file age:** {(datetime.now().timestamp() - latest_file.stat().st_mtime):.1f}s")
+            
+            st.divider()
+            # Add back to cleaning button
+            if st.button("🔄 Clean Another File", type="secondary"):
+                # Clear the results to go back to upload
+                st.session_state['show_persistent_results'] = False
+                for key in list(st.session_state.keys()):
+                    if 'cleaning' in key.lower() or 'latest' in key.lower():
+                        del st.session_state[key]
+                st.rerun()
+            return  # Stop here - don't show the normal workflow
+        else:
+            # No results found, go to normal workflow
+            st.session_state['show_persistent_results'] = False
     
     
     # Data explorers
