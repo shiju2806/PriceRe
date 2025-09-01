@@ -175,15 +175,88 @@ def render_floating_chat_widget():
         </style>
         """, unsafe_allow_html=True)
         
-        # Simple, reliable chat button
-        if st.button("💬 PriceRe Chat", key="sidebar_chat_btn", help="Open AI assistant"):
-            st.session_state.chat_widget_opened = True
-            st.session_state.show_chat_modal = True
-            st.rerun()
+        # Chat available inline above
+        st.markdown("💬 **Chat available above**")
+
+def render_inline_chat_interface():
+    """Render inline chat interface (not popup)"""
     
-    # Show chat modal if requested using Streamlit's dialog
-    if st.session_state.get('show_chat_modal', False):
-        show_chat_dialog(has_cleaning_data, persistent_results)
+    # Create expandable chat section 
+    with st.expander("💬 PriceRe Chat Assistant", expanded=st.session_state.get('chat_expanded', False)):
+        st.markdown("**Your AI assistant for reinsurance questions, LDTI explanations, and platform guidance.**")
+        
+        # Check OpenAI availability 
+        import os
+        from pathlib import Path
+        
+        # Load .env file manually if needed
+        env_file = Path(__file__).parent.parent / ".env"
+        if env_file.exists():
+            with open(env_file) as f:
+                for line in f:
+                    if "OPENAI_API_KEY=" in line and not line.startswith("#"):
+                        key, value = line.strip().split("=", 1)
+                        os.environ[key] = value
+                        break
+        
+        openai_api_key = os.getenv('OPENAI_API_KEY', '').strip()
+        openai_available = bool(openai_api_key and not openai_api_key.endswith('-here'))
+        
+        if openai_available:
+            st.success("🚀 GPT-4o-mini enabled for intelligent reinsurance conversations!")
+        else:
+            st.warning("📝 Set OPENAI_API_KEY in .env for full AI experience")
+        
+        # Chat history display
+        if 'chat_history' not in st.session_state:
+            st.session_state.chat_history = []
+        
+        # Display recent conversation
+        if st.session_state.chat_history:
+            st.markdown("**Recent Conversation:**")
+            for msg in st.session_state.chat_history[-4:]:  # Show last 4 messages
+                if msg['role'] == 'user':
+                    st.markdown(f"**👤 You:** {msg['content']}")
+                else:
+                    st.markdown(f"**🤖 PriceRe:** {msg['content']}")
+            st.divider()
+        
+        # Chat input with Enter key support
+        user_input = st.chat_input("Ask about LDTI, reinsurance concepts, data cleaning, platform features...")
+        
+        if user_input and user_input.strip():
+            # Add user message
+            st.session_state.chat_history.append({'role': 'user', 'content': user_input})
+            
+            # Process message - Always try OpenAI first for general questions
+            try:
+                from src.chat.chat_assistant import PriceReChatAssistant
+                simple_chat = PriceReChatAssistant()
+                response_text = simple_chat.process_user_message(user_input)[0]
+            except Exception as e:
+                st.error(f"Chat error: {e}")  # Show the actual error for debugging
+                logger.error(f"Chat processing failed: {e}")
+                response_text = f"I can help with reinsurance questions. Error: {str(e)[:100]}"
+            
+            # Add response
+            st.session_state.chat_history.append({'role': 'assistant', 'content': response_text})
+            st.session_state.chat_expanded = True  # Keep expanded after interaction
+            st.rerun()
+        
+        # Action buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🗑️ Clear Chat", key="inline_chat_clear"):
+                st.session_state.chat_history = []
+                st.rerun()
+        
+        with col2:
+            if st.button("📋 Examples", key="inline_chat_examples"):
+                st.session_state.chat_history.extend([
+                    {'role': 'user', 'content': 'What is LDTI?'},
+                    {'role': 'assistant', 'content': 'LDTI stands for Long-Duration Targeted Improvements, accounting standards for long-duration contracts...'}
+                ])
+                st.rerun()
 
 def show_chat_dialog(has_cleaning_data, persistent_results):
     """Show chat dialog using Streamlit's modal approach"""
@@ -253,7 +326,7 @@ def show_chat_dialog(has_cleaning_data, persistent_results):
                     except Exception as e:
                         st.error(f"❌ Error loading data: {e}")
         else:
-            st.info("💡 Upload and clean data to unlock advanced chat features")
+            st.markdown("**💬 Ask about reinsurance concepts, LDTI, platform features, or upload data for cleaning assistance.**")
         
         st.divider()
         
@@ -307,7 +380,9 @@ def show_chat_dialog(has_cleaning_data, persistent_results):
                     simple_chat = PriceReChatAssistant()
                     response_text = simple_chat.process_user_message(user_input)[0]
                 except Exception as e:
-                    response_text = "I can help with reinsurance questions, platform guidance, and data cleaning concepts. Upload and process data for enhanced features!"
+                    st.error(f"Chat error: {e}")  # Show the actual error for debugging
+                    logger.error(f"Chat processing failed: {e}")
+                    response_text = f"I can help with reinsurance questions. Error: {str(e)[:100]}"
             
             # Add response
             st.session_state.chat_history.append({'role': 'assistant', 'content': response_text})
@@ -383,7 +458,7 @@ def render_chat_modal_dialog(has_cleaning_data, persistent_results):
                 except Exception as e:
                     st.error(f"❌ Error loading data: {e}")
     else:
-        st.info("💡 Upload and clean data to unlock advanced chat features")
+        st.markdown("**💬 Ready for reinsurance questions, LDTI explanations, platform guidance, and more!**")
     
     # Chat interface
     st.divider()
@@ -3105,9 +3180,9 @@ def main():
     # Header
     display_main_header()
     
-    # Floating PriceRe Chat Widget - Available throughout the platform
+    # Inline PriceRe Chat - Always available 
     if CHAT_ASSISTANT_AVAILABLE:
-        render_floating_chat_widget()
+        render_inline_chat_interface()
     
     # Check if user explicitly wants to return to recent results
     # Only show persistent results if user has clicked "Return to Results" 
