@@ -175,8 +175,69 @@ def render_floating_chat_widget():
         </style>
         """, unsafe_allow_html=True)
         
-        # Chat available inline above
-        st.markdown("💬 **Chat available above**")
+        # Compact sidebar chat
+        if CHAT_ASSISTANT_AVAILABLE:
+            render_sidebar_chat()
+
+def render_sidebar_chat():
+    """Compact sidebar chat interface"""
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 💬 Pricing Assistant")
+    
+    # Simple chat input
+    user_input = st.sidebar.text_input(
+        "Ask about reinsurance:", 
+        placeholder="What is LDTI?",
+        key="sidebar_chat_input"
+    )
+    
+    if st.sidebar.button("Send", key="sidebar_send"):
+        if user_input.strip():
+            # Initialize chat history
+            if 'sidebar_chat_history' not in st.session_state:
+                st.session_state.sidebar_chat_history = []
+            
+            # Add user message
+            st.session_state.sidebar_chat_history.append({'role': 'user', 'content': user_input})
+            
+            # Process message
+            try:
+                # Load environment manually
+                import os
+                from pathlib import Path
+                env_file = Path(__file__).parent.parent / ".env"
+                if env_file.exists():
+                    with open(env_file) as f:
+                        for line in f:
+                            if "OPENAI_API_KEY=" in line and not line.startswith("#"):
+                                key, value = line.strip().split("=", 1)
+                                os.environ[key] = value.strip()
+                                break
+                
+                from src.chat.chat_assistant import PriceReChatAssistant
+                simple_chat = PriceReChatAssistant()
+                response_text = simple_chat.process_user_message(user_input)[0]
+                
+                # Add response
+                st.session_state.sidebar_chat_history.append({'role': 'assistant', 'content': response_text})
+                st.rerun()
+                
+            except Exception as e:
+                st.sidebar.error(f"Error: {str(e)[:50]}...")
+    
+    # Show last exchange
+    if 'sidebar_chat_history' in st.session_state and st.session_state.sidebar_chat_history:
+        with st.sidebar.expander("💬 Recent", expanded=False):
+            for msg in st.session_state.sidebar_chat_history[-2:]:  # Last 2 messages
+                if msg['role'] == 'user':
+                    st.markdown(f"**You:** {msg['content'][:100]}...")
+                else:
+                    st.markdown(f"**Assistant:** {msg['content'][:100]}...")
+            
+            if st.button("Clear", key="sidebar_clear"):
+                st.session_state.sidebar_chat_history = []
+                st.rerun()
 
 def render_inline_chat_interface():
     """Render inline chat interface (not popup)"""
@@ -202,10 +263,9 @@ def render_inline_chat_interface():
         openai_api_key = os.getenv('OPENAI_API_KEY', '').strip()
         openai_available = bool(openai_api_key and not openai_api_key.endswith('-here'))
         
-        if openai_available:
-            st.success("🚀 GPT-4o-mini enabled for intelligent reinsurance conversations!")
-        else:
-            st.warning("📝 Set OPENAI_API_KEY in .env for full AI experience")
+        # Just show simple status without annoying messages
+        if not openai_available:
+            st.info("💡 Set OPENAI_API_KEY in .env for enhanced AI responses")
         
         # Chat history display
         if 'chat_history' not in st.session_state:
@@ -230,12 +290,26 @@ def render_inline_chat_interface():
             
             # Process message - Always try OpenAI first for general questions
             try:
+                # Load environment manually before creating chat
+                import os
+                from pathlib import Path
+                env_file = Path(__file__).parent.parent / ".env"
+                if env_file.exists():
+                    with open(env_file) as f:
+                        for line in f:
+                            if "OPENAI_API_KEY=" in line and not line.startswith("#"):
+                                key, value = line.strip().split("=", 1)
+                                os.environ[key] = value.strip()
+                                break
+                
                 from src.chat.chat_assistant import PriceReChatAssistant
                 simple_chat = PriceReChatAssistant()
+                st.info(f"OpenAI enabled: {simple_chat.use_openai}, Engine: {simple_chat.openai_engine is not None}")
                 response_text = simple_chat.process_user_message(user_input)[0]
             except Exception as e:
                 st.error(f"Chat error: {e}")  # Show the actual error for debugging
-                logger.error(f"Chat processing failed: {e}")
+                import traceback
+                st.error(f"Full traceback: {traceback.format_exc()}")
                 response_text = f"I can help with reinsurance questions. Error: {str(e)[:100]}"
             
             # Add response
@@ -3180,9 +3254,7 @@ def main():
     # Header
     display_main_header()
     
-    # Inline PriceRe Chat - Always available 
-    if CHAT_ASSISTANT_AVAILABLE:
-        render_inline_chat_interface()
+    # Chat available in sidebar - removed from main area
     
     # Check if user explicitly wants to return to recent results
     # Only show persistent results if user has clicked "Return to Results" 
