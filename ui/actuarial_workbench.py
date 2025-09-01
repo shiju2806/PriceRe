@@ -197,7 +197,7 @@ def model_performance_monitor():
             hovermode='x unified'
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, )
     
     with col2:
         # Model stability metrics
@@ -222,7 +222,7 @@ def model_performance_monitor():
             height=400
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, )
     
     # Feature drift monitoring
     st.markdown("### 🚨 Feature Drift Detection")
@@ -246,8 +246,8 @@ def model_performance_monitor():
         else:
             return 'background-color: #d1fae5'
     
-    styled_df = feature_drift_data.style.applymap(highlight_drift, subset=['Status'])
-    st.dataframe(styled_df, use_container_width=True)
+    styled_df = feature_drift_data.style.map(highlight_drift, subset=['Status'])
+    st.dataframe(styled_df, )
     
     # Alerts and recommendations
     st.markdown("### 🚨 Current Alerts")
@@ -349,7 +349,7 @@ def assumption_testing_lab():
             })
         
         results_df = pd.DataFrame(scenario_results)
-        st.dataframe(results_df, use_container_width=True)
+        st.dataframe(results_df, )
         
         # Visualization
         impacts = [
@@ -369,7 +369,7 @@ def assumption_testing_lab():
             height=400
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, )
     
     elif scenario_type == "Custom Sensitivity Analysis":
         st.markdown("#### 🎛️ Custom Sensitivity Analysis")
@@ -421,7 +421,7 @@ def assumption_testing_lab():
             height=400
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, )
         
         # Export sensitivity results
         sensitivity_df = pd.DataFrame({
@@ -469,7 +469,7 @@ def risk_analytics_dashboard():
         )
         
         fig.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, )
     
     with col2:
         st.markdown("### 📊 Risk Concentration Metrics")
@@ -496,8 +496,8 @@ def risk_analytics_dashboard():
             else:
                 return 'background-color: #fee2e2'
         
-        styled_metrics = concentration_metrics.style.applymap(highlight_status, subset=['Status'])
-        st.dataframe(styled_metrics, use_container_width=True)
+        styled_metrics = concentration_metrics.style.map(highlight_status, subset=['Status'])
+        st.dataframe(styled_metrics, )
     
     # VaR and tail risk analysis
     st.markdown("### 📉 Value at Risk (VaR) Analysis")
@@ -516,7 +516,7 @@ def risk_analytics_dashboard():
         })
         
         st.markdown("**VaR by Confidence Level**")
-        st.dataframe(var_df, use_container_width=True)
+        st.dataframe(var_df, )
     
     with col2:
         # Risk factor correlation matrix
@@ -539,7 +539,7 @@ def risk_analytics_dashboard():
             text_auto='.2f'
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, )
     
     with col3:
         # Tail risk metrics
@@ -552,8 +552,8 @@ def risk_analytics_dashboard():
             'Status': ['⚠️ Above', '⚠️ Above', '⚠️ Above', '✅ Good']
         })
         
-        styled_tail = tail_metrics.style.applymap(highlight_status, subset=['Status'])
-        st.dataframe(styled_tail, use_container_width=True)
+        styled_tail = tail_metrics.style.map(highlight_status, subset=['Status'])
+        st.dataframe(styled_tail, )
     
     # Monte Carlo simulation results
     st.markdown("### 🎲 Monte Carlo Simulation Results")
@@ -593,7 +593,7 @@ def risk_analytics_dashboard():
         fig.add_vline(x=p99, line_dash="dash", line_color="red", 
                      annotation_text="99th Percentile")
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, )
     
     with col2:
         # Percentile table
@@ -607,7 +607,7 @@ def risk_analytics_dashboard():
         })
         
         st.markdown("**Simulation Percentiles**")
-        st.dataframe(percentile_df, use_container_width=True)
+        st.dataframe(percentile_df, )
         
         # Key statistics
         st.markdown("**Key Statistics**")
@@ -644,8 +644,8 @@ def model_architecture_analyzer():
         else:
             return ''
     
-    styled_models = models.style.applymap(highlight_risk, subset=['Risk Rating'])
-    st.dataframe(styled_models, use_container_width=True)
+    styled_models = models.style.map(highlight_risk, subset=['Risk Rating'])
+    st.dataframe(styled_models, )
     
     # Model dependency graph
     st.markdown("### 🔗 Model Dependency Graph")
@@ -697,7 +697,7 @@ def model_architecture_analyzer():
             title='Model Complexity Matrix'
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, )
     
     # Model validation status
     st.markdown("### ✅ Model Validation Status")
@@ -724,8 +724,8 @@ def model_architecture_analyzer():
         else:
             return ''
     
-    styled_validation = validation_status.style.applymap(highlight_validation)
-    st.dataframe(styled_validation, use_container_width=True)
+    styled_validation = validation_status.style.map(highlight_validation)
+    st.dataframe(styled_validation, )
     
     # Model change log
     st.markdown("### 📝 Model Change Log")
@@ -745,7 +745,7 @@ def model_architecture_analyzer():
         'Approver': ['John Smith', 'Jane Doe', 'Bob Johnson', 'Alice Brown', 'John Smith']
     })
     
-    st.dataframe(change_log, use_container_width=True)
+    st.dataframe(change_log, )
     
     # Export model documentation
     st.markdown("### 📥 Export Documentation")
@@ -886,8 +886,8 @@ def regulatory_compliance_dashboard():
         else:
             return ''
     
-    styled_compliance = compliance_details.style.applymap(highlight_compliance, subset=['Status'])
-    st.dataframe(styled_compliance, use_container_width=True)
+    styled_compliance = compliance_details.style.map(highlight_compliance, subset=['Status'])
+    st.dataframe(styled_compliance, )
     
     # Upcoming compliance deadlines
     st.markdown("### ⏰ Upcoming Compliance Deadlines")
@@ -936,7 +936,7 @@ def regulatory_compliance_dashboard():
         'Status': ['⏳ In Progress', '✅ Complete', '✅ Complete', '⏳ In Progress']
     })
     
-    st.dataframe(reg_updates, use_container_width=True)
+    st.dataframe(reg_updates, )
     
     # Export compliance reports
     st.markdown("### 📥 Export Compliance Reports")

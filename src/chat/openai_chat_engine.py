@@ -38,7 +38,19 @@ class OpenAIChatEngine:
     
     def __init__(self, api_key: Optional[str] = None):
         """Initialize OpenAI chat engine"""
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        # Load .env file manually if needed
+        if not api_key:
+            from pathlib import Path
+            env_file = Path(__file__).parent.parent.parent / ".env"
+            if env_file.exists():
+                with open(env_file) as f:
+                    for line in f:
+                        if "OPENAI_API_KEY=" in line and not line.startswith("#"):
+                            key, value = line.strip().split("=", 1)
+                            os.environ[key] = value
+                            break
+        
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY", "").strip()
         self.model = "gpt-4o-mini"
         self.conversation_history = []
         self.context = ChatContext()
@@ -277,4 +289,20 @@ def create_openai_engine(api_key: Optional[str] = None) -> Optional[OpenAIChatEn
 
 def is_openai_available() -> bool:
     """Check if OpenAI integration is available"""
-    return OPENAI_AVAILABLE and bool(os.getenv("OPENAI_API_KEY"))
+    if not OPENAI_AVAILABLE:
+        return False
+    
+    # Load .env file manually if needed
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        from pathlib import Path
+        env_file = Path(__file__).parent.parent.parent / ".env"
+        if env_file.exists():
+            with open(env_file) as f:
+                for line in f:
+                    if "OPENAI_API_KEY=" in line and not line.startswith("#"):
+                        key, value = line.strip().split("=", 1)
+                        api_key = value.strip()
+                        break
+    
+    return bool(api_key and not api_key.endswith('-here'))

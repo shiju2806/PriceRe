@@ -1,0 +1,17 @@
+[
+  {
+    "policy_id":"POL001",
+    "issue_age":35,
+    "face_amount":100000
+  },
+  {
+    "policy_id":"POL002",
+    "issue_age":42,
+    "face_amount":250000
+  },
+  {
+    "policy_id":"POL003",
+    "issue_age":28,
+    "face_amount":150000
+  }
+]

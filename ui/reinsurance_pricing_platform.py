@@ -213,7 +213,7 @@ def reinsurance_data_section():
             size_dist = cedent_profiles['size_category'].value_counts()
             fig = px.pie(values=size_dist.values, names=size_dist.index, 
                         title="Cedent Distribution by Size")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
 def cedent_analysis_section():
     """Cedent risk analysis and selection"""
@@ -339,7 +339,7 @@ def cedent_analysis_section():
                     height=450,
                     hovermode='x unified'
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
             
             with exp_tab2:
                 col1, col2 = st.columns(2)
@@ -365,7 +365,7 @@ def cedent_analysis_section():
                         ]
                     })
                     
-                    st.dataframe(stats_data, use_container_width=True)
+                    st.dataframe(stats_data)
                     
                     # Credibility calculation
                     n_years = len(cedent_exp_data)
@@ -390,7 +390,7 @@ def cedent_analysis_section():
                     )
                     fig.add_vline(x=cedent_exp_data['loss_ratio'].mean(), line_dash="dash", line_color="red", annotation_text="Mean")
                     fig.add_vline(x=0.75, line_dash="dot", line_color="gray", annotation_text="Industry Avg")
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig)
                     
                     # Trend analysis
                     if len(cedent_exp_data) >= 3:
@@ -431,7 +431,7 @@ def cedent_analysis_section():
                         'Benchmark': ['< 1.000', '< 0.150', '0-10%', '< 0.100', '< 30%']
                     })
                     
-                    st.dataframe(uw_metrics, use_container_width=True)
+                    st.dataframe(uw_metrics)
                     
                     # Overall underwriting score
                     scores = {'A': 4, 'A-': 3.7, 'B+': 3.3, 'B': 3.0, 'B-': 2.7, 'C+': 2.3, 'C': 2.0}
@@ -698,7 +698,7 @@ def display_pricing_results(result: TreatyResult):
                     'Final qx': [0.00062, 0.00096, 0.00228, 0.00511, 0.01142]
                 })
                 
-                st.dataframe(mortality_data, use_container_width=True)
+                st.dataframe(mortality_data)
                 
                 st.markdown("**📈 Key Insights:**")
                 st.write("• ML model reduces young-age mortality by 8%")
@@ -714,7 +714,7 @@ def display_pricing_results(result: TreatyResult):
                     'Status': ['✅ Adequate', '✅ High', '✅ Narrow', '✅ Reasonable', '✅ Not Significant']
                 })
                 
-                st.dataframe(credibility_data, use_container_width=True)
+                st.dataframe(credibility_data, )
                 
                 # Mortality trend chart
                 trend_data = pd.DataFrame({
@@ -727,7 +727,7 @@ def display_pricing_results(result: TreatyResult):
                              title='5-Year Mortality A/E Trend')
                 fig.add_annotation(x=2020, y=1.18, text="COVID Impact", 
                                  arrowhead=2, arrowcolor="red")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
         
         with tab2:
             st.markdown("#### ML Model Performance & Feature Importance")
@@ -744,7 +744,7 @@ def display_pricing_results(result: TreatyResult):
                     'Industry Benchmark': [0.850, 0.700, 0.350, 0.820, 0.810, 0.815]
                 })
                 
-                st.dataframe(model_metrics, use_container_width=True)
+                st.dataframe(model_metrics, )
                 
                 st.success("🎯 **Model significantly outperforms industry benchmarks**")
                 
@@ -759,7 +759,7 @@ def display_pricing_results(result: TreatyResult):
                 
                 fig = px.bar(features, x='Importance', y='Feature', orientation='h',
                            title='Feature Importance in Mortality Prediction')
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
                 
             with col2:
                 st.markdown("**Model Validation & Back-testing:**")
@@ -773,7 +773,7 @@ def display_pricing_results(result: TreatyResult):
                     'Relative Error': ['1.0%', '1.5%', '1.8%', '1.3%']
                 })
                 
-                st.dataframe(backtest_data, use_container_width=True)
+                st.dataframe(backtest_data, )
                 
                 st.markdown("**🔍 Model Diagnostics:**")
                 st.write("• **Overfitting Check:** Validation AUC within 0.6% of training")
@@ -791,7 +791,7 @@ def display_pricing_results(result: TreatyResult):
                 fig = px.scatter(calibration_data, x='Predicted Probability', y='Observed Frequency',
                                title='Model Calibration (Reliability Diagram)')
                 fig.add_trace(px.line(calibration_data, x='Predicted Probability', y='Perfect Calibration').data[0])
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
         
         with tab3:
             st.markdown("#### NAIC RBC & Economic Capital Calculations")
@@ -810,12 +810,12 @@ def display_pricing_results(result: TreatyResult):
                     'Percentage': ['3.3%', '62.1%', '30.5%', '3.9%']
                 })
                 
-                st.dataframe(rbc_data, use_container_width=True)
+                st.dataframe(rbc_data, )
                 
                 # RBC pie chart
                 fig = px.pie(rbc_data, values='Capital Req ($M)', names='Risk Component',
                            title='RBC Capital Allocation by Risk Type')
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
                 
             with col2:
                 st.markdown("**Economic Capital (VaR Analysis):**")
@@ -827,7 +827,7 @@ def display_pricing_results(result: TreatyResult):
                     'Capital Multiple': ['1.2x', '1.9x', '2.2x', '2.7x']
                 })
                 
-                st.dataframe(var_data, use_container_width=True)
+                st.dataframe(var_data, )
                 
                 st.markdown("**🎯 Capital Adequacy Assessment:**")
                 st.write(f"• **Regulatory RBC:** ${sum([1.88, 35.59, 17.45, 2.22]):.1f}M")
@@ -891,7 +891,7 @@ def display_pricing_results(result: TreatyResult):
                     'Status': ['✅', '✅', '✅', '✅', '✅']
                 })
                 
-                st.dataframe(soa_compliance, use_container_width=True)
+                st.dataframe(soa_compliance, )
                 
                 st.markdown("**NAIC Model Regulation Compliance:**")
                 
@@ -901,7 +901,7 @@ def display_pricing_results(result: TreatyResult):
                     'Last Review': ['2024-Q1', '2024-Q1', '2023-Q4', '2024-Q2']
                 })
                 
-                st.dataframe(naic_compliance, use_container_width=True)
+                st.dataframe(naic_compliance, )
             
             with col2:
                 st.markdown("**Professional Certifications & Reviews:**")
@@ -933,7 +933,7 @@ def display_pricing_results(result: TreatyResult):
                     'Status': ['✅ Current', '✅ Current', '✅ Current', '⚠️ Update Due']
                 })
                 
-                st.dataframe(doc_status, use_container_width=True)
+                st.dataframe(doc_status, )
     
     # Detailed breakdown
     st.markdown("### 📊 Pricing Breakdown")
@@ -957,7 +957,7 @@ def display_pricing_results(result: TreatyResult):
             color_discrete_sequence=['#ef4444', '#f59e0b', '#10b981', '#3b82f6']
         )
         fig.update_layout(showlegend=False, height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
     
     with col2:
         # Risk metrics
@@ -1005,7 +1005,7 @@ def display_pricing_results(result: TreatyResult):
             color="Impact",
             color_continuous_scale="RdYlGn_r"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
 def portfolio_analysis_section():
     """Portfolio and concentration analysis"""
@@ -1035,7 +1035,7 @@ def portfolio_analysis_section():
             y='premium_volume',
             title='Premium Concentration by State'
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
         
         # Product mix analysis
         st.markdown("### Product Mix Analysis")
@@ -1048,7 +1048,7 @@ def portfolio_analysis_section():
             names='product_type',
             title='Portfolio Mix by Product Type'
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
     
     # Catastrophe exposure
     cat_events = datasets['catastrophe_events']
@@ -1066,7 +1066,7 @@ def portfolio_analysis_section():
             title='Historical Catastrophe Events'
         )
         fig.update_layout(yaxis=dict(type="log"))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
 def data_transparency_section():
     """Interactive data transparency and calculation verification"""
@@ -1435,13 +1435,355 @@ def data_transparency_section():
             
             st.info(f"**Last Validation:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC")
 
+def life_and_retirement_scenarios():
+    """Life & Retirement Specific Scenario Analysis"""
+    
+    st.markdown("### 💼 Life & Savings/Retirement Reinsurance Scenarios")
+    st.markdown("**Comprehensive scenario analysis specifically designed for Life & Savings/Retirement reinsurance business**")
+    
+    # Header with business focus
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #1e40af 0%, #7c2d12 100%); color: white; padding: 1.5rem; border-radius: 15px; margin: 1rem 0;">
+        <h3 style="margin:0; color: white;">🎯 Focus: Life & Savings/Retirement Business</h3>
+        <p style="margin:0.5rem 0 0 0;">Real-world scenarios based on industry data and regulatory requirements</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Scenario selection
+    scenario_type = st.selectbox(
+        "Select Scenario Type:",
+        [
+            "Large Term Life Portfolio (Quota Share)",
+            "Universal Life Surplus Share Treaty", 
+            "Group Life Excess of Loss",
+            "Immediate Annuity Longevity Risk",
+            "Corporate Pension Risk Transfer",
+            "Compare All Scenarios"
+        ]
+    )
+    
+    if scenario_type == "Large Term Life Portfolio (Quota Share)":
+        display_term_life_scenario()
+    elif scenario_type == "Universal Life Surplus Share Treaty":
+        display_universal_life_scenario()
+    elif scenario_type == "Group Life Excess of Loss":
+        display_group_life_scenario()
+    elif scenario_type == "Immediate Annuity Longevity Risk":
+        display_annuity_scenario()
+    elif scenario_type == "Corporate Pension Risk Transfer":
+        display_pension_scenario()
+    elif scenario_type == "Compare All Scenarios":
+        display_scenario_comparison()
+
+def display_term_life_scenario():
+    """Display Large Term Life Portfolio scenario"""
+    
+    st.markdown("#### 📊 Large Term Life Portfolio - Quota Share 25%")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("""
+        **Scenario Parameters:**
+        - Portfolio Size: $50B in force
+        - Annual Premium: $2,850,000,000
+        - Policy Count: 185,000 policies
+        - Average Face Amount: $270,000
+        - Geographic Mix: Northeast (28%), Southeast (31%), Midwest (22%), West (19%)
+        - Age Distribution: 25-35 (32%), 36-45 (41%), 46-55 (22%), 56-65 (5%)
+        """)
+        
+        # Key metrics
+        st.markdown("**Key Metrics:**")
+        metrics_data = {
+            "Metric": ["Reinsurer Share", "Expected Loss Ratio", "Claims Ratio", "Persistency Rate", "Profit Margin Target"],
+            "Value": ["$712,500,000", "68.0%", "68.0%", "89.0%", "8.0%"],
+            "Industry Benchmark": ["$650M - $750M", "65% - 72%", "66% - 70%", "87% - 91%", "6% - 12%"],
+            "Status": ["✅ Within Range", "✅ Industry Average", "✅ Acceptable", "✅ Good", "✅ Target Met"]
+        }
+        st.dataframe(pd.DataFrame(metrics_data))
+    
+    with col2:
+        # Risk visualization
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = 68.0,
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            title = {'text': "Loss Ratio %"},
+            gauge = {
+                'axis': {'range': [None, 100]},
+                'bar': {'color': "darkblue"},
+                'steps': [
+                    {'range': [0, 65], 'color': "lightgreen"},
+                    {'range': [65, 75], 'color': "yellow"},
+                    {'range': [75, 100], 'color': "lightcoral"}
+                ],
+                'threshold': {
+                    'line': {'color': "red", 'width': 4},
+                    'thickness': 0.75,
+                    'value': 75
+                }
+            }
+        ))
+        fig.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
+        st.plotly_chart(fig)
+
+def display_universal_life_scenario():
+    """Display Universal Life Surplus Share scenario"""
+    
+    st.markdown("#### 🏦 Universal Life Surplus Share - $2M Retention")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("""
+        **Target Market: High Net Worth Individuals**
+        - Annual Premium: $185,000,000
+        - Policy Count: 2,450 policies
+        - Average Face Amount: $2,850,000
+        - Retention Limit: $2,000,000
+        - Geographic Concentration: Northeast (42%), West (35%)
+        """)
+        
+        # Show surplus calculation
+        st.markdown("**Surplus Share Calculation:**")
+        surplus_data = {
+            "Policy Size Range": ["$1M - $2M", "$2M - $5M", "$5M - $10M", ">$10M"],
+            "Count": [980, 1225, 200, 45],
+            "Reinsurer Share": ["0%", "40-75%", "80-90%", "85-95%"],
+            "Premium Share": ["$0", "$45.2M", "$8.9M", "$1.1M"]
+        }
+        st.dataframe(pd.DataFrame(surplus_data))
+    
+    with col2:
+        # Premium distribution
+        labels = ['Retention', 'Reinsurer Share']
+        values = [129.8, 55.2]
+        
+        fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.3)])
+        fig.update_layout(
+            title="Premium Distribution ($M)",
+            height=300,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
+        st.plotly_chart(fig)
+
+def display_group_life_scenario():
+    """Display Group Life Excess of Loss scenario"""
+    
+    st.markdown("#### 🏭 Group Life Excess of Loss - $500K Retention")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("""
+        **Corporate Group Life Insurance:**
+        - Annual Premium: $425,000,000
+        - Covered Lives: 850,000 employees
+        - Average Coverage: $95,000 per life
+        - Retention per Life: $500,000
+        - Industry Focus: Manufacturing (35%), Services (28%)
+        """)
+        
+        # Catastrophic risk analysis
+        st.markdown("**Catastrophic Risk Analysis:**")
+        cat_risk_data = {
+            "Event Type": ["Pandemic", "Natural Disaster", "Workplace Accident", "Terrorism", "Other"],
+            "Probability": ["Medium", "Low", "Medium", "Very Low", "Low"],
+            "Severity": ["Very High", "High", "Medium", "Very High", "Medium"],
+            "Expected Claims": ["15-25", "5-15", "8-12", "2-5", "3-8"],
+            "Max Exposure": ["$500M", "$300M", "$150M", "$250M", "$100M"]
+        }
+        st.dataframe(pd.DataFrame(cat_risk_data))
+    
+    with col2:
+        # Frequency/Severity chart
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=[2, 5, 8, 15, 25],
+            y=[500, 300, 150, 250, 100],
+            mode='markers+text',
+            text=['Terrorism', 'Natural Disaster', 'Workplace', 'Pandemic', 'Other'],
+            textposition="top center",
+            marker=dict(size=[15, 20, 25, 35, 20], color=['red', 'orange', 'yellow', 'darkred', 'lightblue'])
+        ))
+        fig.update_layout(
+            title="Frequency vs Severity",
+            xaxis_title="Expected Claims",
+            yaxis_title="Max Exposure ($M)",
+            height=300,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
+        st.plotly_chart(fig)
+
+def display_annuity_scenario():
+    """Display Immediate Annuity Longevity Risk scenario"""
+    
+    st.markdown("#### 💰 Immediate Annuity Longevity Risk - 40% Quota Share")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("""
+        **Longevity and Mortality Improvement Risk:**
+        - Reserves Transferred: $1,200,000,000
+        - Annuitant Count: 15,500 lives
+        - Average Reserve: $385,000 per annuitant
+        - Age Distribution: 60-65 (15%), 66-70 (28%), 71-75 (35%), 76-80 (22%)
+        - Duration Risk: 12.5 years modified duration
+        """)
+        
+        # Longevity risk factors
+        st.markdown("**Longevity Risk Factors:**")
+        longevity_data = {
+            "Risk Factor": ["Base Mortality", "Mortality Improvement", "Socioeconomic Selection", "Medical Advances", "Lifestyle Changes"],
+            "Impact": ["+0%", "+8%", "+3%", "+5%", "+2%"],
+            "Confidence": ["High", "Medium", "High", "Medium", "Low"],
+            "Hedging Available": ["Yes", "Limited", "No", "No", "No"]
+        }
+        st.dataframe(pd.DataFrame(longevity_data))
+    
+    with col2:
+        # Mortality improvement projection
+        years = list(range(2025, 2045))
+        base_mortality = [0.045 for _ in years]
+        improved_mortality = [0.045 * (0.98 ** (year - 2025)) for year in years]
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=years, y=base_mortality, name='Static Mortality', line=dict(dash='dash')))
+        fig.add_trace(go.Scatter(x=years, y=improved_mortality, name='With Improvement'))
+        fig.update_layout(
+            title="Mortality Rate Projection",
+            xaxis_title="Year",
+            yaxis_title="Mortality Rate",
+            height=300,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
+        st.plotly_chart(fig)
+
+def display_pension_scenario():
+    """Display Corporate Pension Risk Transfer scenario"""
+    
+    st.markdown("#### 🏭 Corporate Pension Risk Transfer - $3.5B Obligation")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("""
+        **Bulk Annuity Reinsurance:**
+        - Pension Obligation: $3,500,000,000
+        - Participant Count: 28,500 retirees
+        - Average Pension Value: $615,000
+        - Geographic Mix: Midwest (45%) - Manufacturing pension
+        - Duration: 15.8 years
+        """)
+        
+        # Transaction details
+        st.markdown("**Transaction Structure:**")
+        transaction_data = {
+            "Component": ["Direct Pension Obligation", "Reinsurer Retention", "Surplus Share (Reinsured)", "Commission", "Profit Sharing"],
+            "Amount ($M)": ["3,500", "1,500", "2,000", "160", "Variable"],
+            "Percentage": ["100%", "43%", "57%", "4.6%", "0-15%"],
+            "Risk Type": ["Full", "Base Longevity", "Excess Longevity", "Fixed Cost", "Performance Based"]
+        }
+        st.dataframe(pd.DataFrame(transaction_data))
+    
+    with col2:
+        # Age distribution of participants
+        ages = ['55-60', '61-65', '66-70', '71-75', '76+']
+        counts = [3420, 7125, 9120, 6270, 2565]
+        
+        fig = go.Figure(data=[go.Bar(x=ages, y=counts, marker_color='darkblue')])
+        fig.update_layout(
+            title="Participant Age Distribution",
+            xaxis_title="Age Group",
+            yaxis_title="Count",
+            height=300,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
+        st.plotly_chart(fig)
+
+def display_scenario_comparison():
+    """Display comparison of all scenarios"""
+    
+    st.markdown("#### 📊 Comprehensive Scenario Comparison")
+    
+    # Summary comparison table
+    st.markdown("**Portfolio Summary:**")
+    comparison_data = {
+        "Scenario": [
+            "Large Term Life Portfolio",
+            "Universal Life Surplus", 
+            "Group Life Excess of Loss",
+            "Immediate Annuity Risk",
+            "Corporate Pension Transfer"
+        ],
+        "Premium/Reserves ($M)": [2850, 185, 425, 1200, 3500],
+        "Reinsurer Share ($M)": [712.5, 55.2, 14.9, 480.0, 2000.0],
+        "Expected Loss Ratio": ["68.0%", "58.0%", "75.6%", "38.2%", "35.7%"],
+        "Business Type": ["Individual Life", "High Net Worth", "Group Benefits", "Retirement Income", "Pension Obligations"],
+        "Risk Profile": ["Mortality", "UW + Mortality", "Catastrophic", "Longevity", "Longevity + Duration"]
+    }
+    df_comparison = pd.DataFrame(comparison_data)
+    st.dataframe(df_comparison)
+    
+    # Portfolio metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        total_premium = sum([712.5, 55.2, 14.9, 480.0, 2000.0])
+        st.metric("Total Reinsured Premium", f"${total_premium:,.1f}M")
+        
+    with col2:
+        weighted_loss_ratio = (712.5*0.68 + 55.2*0.58 + 14.9*0.756 + 480.0*0.382 + 2000.0*0.357) / total_premium
+        st.metric("Weighted Avg Loss Ratio", f"{weighted_loss_ratio:.1%}")
+        
+    with col3:
+        capital_estimate = total_premium * 2.5
+        st.metric("Estimated Capital Req.", f"${capital_estimate:,.0f}M")
+    
+    # Risk diversification chart
+    st.markdown("**Risk Diversification Analysis:**")
+    
+    fig = make_subplots(rows=1, cols=2, 
+                        specs=[[{"type": "pie"}, {"type": "bar"}]],
+                        subplot_titles=["Premium Distribution", "Loss Ratio by Scenario"])
+    
+    # Premium pie chart
+    fig.add_trace(go.Pie(
+        labels=["Term Life", "Universal Life", "Group Life", "Annuity", "Pension"],
+        values=[712.5, 55.2, 14.9, 480.0, 2000.0],
+        name="Premium"
+    ), row=1, col=1)
+    
+    # Loss ratio bar chart
+    fig.add_trace(go.Bar(
+        x=["Term Life", "Universal Life", "Group Life", "Annuity", "Pension"],
+        y=[68.0, 58.0, 75.6, 38.2, 35.7],
+        name="Loss Ratio %",
+        marker_color=['blue', 'green', 'orange', 'purple', 'red']
+    ), row=1, col=2)
+    
+    fig.update_layout(height=400, showlegend=False)
+    st.plotly_chart(fig)
+    
+    # Key insights
+    st.markdown("**Key Portfolio Insights:**")
+    st.markdown("""
+    - **Diversification**: Portfolio spans all major life & retirement product lines
+    - **Risk Balance**: Mix of mortality risk (life insurance) and longevity risk (annuities/pensions)
+    - **Capital Efficiency**: Large pension transactions provide scale and margin
+    - **Regulatory Compliance**: All scenarios meet NAIC RBC and SOA standards
+    - **Market Position**: Competitive pricing across all business segments
+    """)
+
 def main():
     """Main reinsurance platform"""
     initialize_session_state()
     display_reinsurance_header()
     
     # Main navigation tabs
-    main_tab1, main_tab2 = st.tabs(["🏢 Treaty Pricing Platform", "⚙️ Actuarial Workbench"])
+    main_tab1, main_tab2, main_tab3 = st.tabs(["🏢 Treaty Pricing Platform", "⚙️ Actuarial Workbench", "💼 Life & Retirement Scenarios"])
     
     with main_tab1:
         # Original reinsurance platform content
@@ -1469,6 +1811,10 @@ def main():
         except Exception as e:
             st.error(f"Error loading actuarial workbench: {str(e)}")
             st.info("The actuarial workbench provides advanced technical capabilities including real-time model monitoring, assumption testing, and comprehensive risk analytics.")
+    
+    with main_tab3:
+        # Phase 3: Life & Retirement Scenario Analysis
+        life_and_retirement_scenarios()
     
     # Footer
     st.markdown("---")

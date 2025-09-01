@@ -1,0 +1,51 @@
+{
+  "test_timestamp": "2025-08-29T12:50:26.108218",
+  "scenarios": [
+    {
+      "name": "Large Term Life Portfolio - Quota Share 25%",
+      "portfolio_size": "$50B in force",
+      "annual_premium": "$2,850,000,000",
+      "reinsurer_share": "$712,500,000",
+      "expected_loss_ratio": "68.0%",
+      "technical_result": "7.0%"
+    },
+    {
+      "name": "Universal Life Surplus Share - $2M Retention",
+      "target_market": "High Net Worth Individuals",
+      "annual_premium": "$185,000,000",
+      "reinsurer_share": "$55,175,439",
+      "expected_loss_ratio": "58.0%",
+      "technical_result": "17.0%"
+    },
+    {
+      "name": "Group Life Excess of Loss - $500K Retention",
+      "coverage_type": "Corporate Group Life Insurance",
+      "annual_premium": "$425,000,000",
+      "reinsurer_share": "$14,875,000",
+      "expected_loss_ratio": "75.6%",
+      "technical_result": "-0.6%"
+    },
+    {
+      "name": "Immediate Annuity Longevity Risk - 40% Quota Share",
+      "risk_type": "Longevity and Mortality Improvement Risk",
+      "reserves_transferred": "$1,200,000,000",
+      "reinsurer_share": "$480,000,000",
+      "expected_loss_ratio": "38.2%",
+      "technical_result": "36.7%"
+    },
+    {
+      "name": "Corporate Pension Risk Transfer - $3.5B Obligation",
+      "transaction_type": "Bulk Annuity Reinsurance",
+      "pension_obligation": "$3,500,000,000",
+      "reinsurer_share": "$350,000,000",
+      "expected_loss_ratio": "35.7%",
+      "technical_result": "39.3%"
+    }
+  ],
+  "portfolio_summary": {
+    "total_premium": 1612550438.5964913,
+    "average_loss_ratio": 0.5511,
+    "scenario_count": 5
+  },
+  "validation_status": "PASSED"
+}

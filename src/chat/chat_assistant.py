@@ -332,7 +332,7 @@ class PriceReChatAssistant:
         # Add user message to history
         self.add_message("user", user_message)
         
-        # Use OpenAI if available and context is set, otherwise fall back to pattern matching
+        # Use OpenAI if available (context not required for general questions)
         if self.use_openai and self.openai_engine:
             try:
                 response = self.openai_engine.chat(user_message)

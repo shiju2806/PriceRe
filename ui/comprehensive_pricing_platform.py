@@ -192,11 +192,25 @@ def show_chat_dialog(has_cleaning_data, persistent_results):
     def chat_dialog():
         st.markdown("**Your AI assistant for data cleaning, reinsurance questions, and platform help.**")
         
-        # Check OpenAI availability from environment
+        # Check OpenAI availability from environment (load .env first)
         import os
-        openai_available = bool(os.getenv('OPENAI_API_KEY'))
+        from pathlib import Path
+        
+        # Load .env file manually if needed
+        env_file = Path(__file__).parent.parent / ".env"
+        if env_file.exists():
+            with open(env_file) as f:
+                for line in f:
+                    if "OPENAI_API_KEY=" in line and not line.startswith("#"):
+                        key, value = line.strip().split("=", 1)
+                        os.environ[key] = value
+                        break
+        
+        openai_api_key = os.getenv('OPENAI_API_KEY', '').strip()
+        openai_available = bool(openai_api_key and not openai_api_key.endswith('-here'))
+        
         if openai_available:
-            st.success("✅ GPT-4o mini enabled for intelligent conversations!")
+            st.success("🚀 GPT-4o-mini enabled for intelligent reinsurance conversations!")
         else:
             st.info("📝 Using basic pattern matching - set OPENAI_API_KEY in .env for full AI experience")
         
@@ -257,64 +271,57 @@ def show_chat_dialog(has_cleaning_data, persistent_results):
                     st.markdown(f"**🤖 PriceRe:** {msg['content']}")
             st.divider()
         
-        # Chat input
-        user_input = st.text_area(
-            "Ask PriceRe Chat:",
-            placeholder="Ask about data cleaning, reinsurance concepts, platform features...",
-            height=100,
-            key="dialog_chat_input"
-        )
+        # Chat input with Enter key support
+        user_input = st.chat_input("Ask about LDTI, reinsurance concepts, data cleaning, platform features...")
         
-        col1, col2, col3 = st.columns([2, 1, 1])
+        if user_input and user_input.strip():
+            # Add user message
+            st.session_state.chat_history.append({'role': 'user', 'content': user_input})
+            
+            # Process message
+            if has_cleaning_data and st.session_state.get('global_chat_active', False):
+                try:
+                    from src.chat.streamlit_chat_interface import initialize_chat_assistant, setup_chat_context
+                    
+                    # Initialize chat assistant (uses environment variables)
+                    initialize_chat_assistant()
+                    setup_chat_context(
+                        st.session_state.chat_original_df,
+                        st.session_state.chat_cleaned_df,
+                        st.session_state.chat_cleaning_result
+                    )
+                    
+                    response, action = st.session_state.chat_assistant.process_user_message(user_input)
+                    response_text = response
+                    
+                    if action and action.confidence > 0.6:
+                        response_text += f"\n\n**💡 Suggested Action:** {action.description}"
+                        
+                except Exception as e:
+                    logger.error(f"Chat processing error: {e}")
+                    response_text = f"I understand you're asking about: '{user_input[:50]}...' Let me help with that."
+            else:
+                # Create a simple chat instance for general questions
+                try:
+                    from src.chat.chat_assistant import PriceReChatAssistant
+                    simple_chat = PriceReChatAssistant()
+                    response_text = simple_chat.process_user_message(user_input)[0]
+                except Exception as e:
+                    response_text = "I can help with reinsurance questions, platform guidance, and data cleaning concepts. Upload and process data for enhanced features!"
+            
+            # Add response
+            st.session_state.chat_history.append({'role': 'assistant', 'content': response_text})
+            st.rerun()
         
+        # Action buttons
+        col1, col2 = st.columns(2)
         with col1:
-            if st.button("💬 Send Message", key="dialog_chat_send", type="primary"):
-                if user_input.strip():
-                    # Add user message
-                    st.session_state.chat_history.append({'role': 'user', 'content': user_input})
-                    
-                    # Process message
-                    if has_cleaning_data and st.session_state.get('global_chat_active', False):
-                        try:
-                            from src.chat.streamlit_chat_interface import initialize_chat_assistant, setup_chat_context
-                            
-                            # Initialize chat assistant (uses environment variables)
-                            initialize_chat_assistant()
-                            setup_chat_context(
-                                st.session_state.chat_original_df,
-                                st.session_state.chat_cleaned_df,
-                                st.session_state.chat_cleaning_result
-                            )
-                            
-                            response, action = st.session_state.chat_assistant.process_user_message(user_input)
-                            response_text = response
-                            
-                            if action and action.confidence > 0.6:
-                                response_text += f"\n\n**💡 Suggested Action:** {action.description}"
-                                
-                        except Exception as e:
-                            logger.error(f"Chat processing error: {e}")
-                            response_text = f"I understand you're asking about: '{user_input[:50]}...' Let me help with that."
-                    else:
-                        # Create a simple chat instance for general questions
-                        try:
-                            from src.chat.chat_assistant import PriceReChatAssistant
-                            simple_chat = PriceReChatAssistant()
-                            response_text = simple_chat.process_user_message(user_input)[0]
-                        except Exception as e:
-                            response_text = "I can help with reinsurance questions, platform guidance, and data cleaning concepts. Upload and process data for enhanced features!"
-                    
-                    # Add response
-                    st.session_state.chat_history.append({'role': 'assistant', 'content': response_text})
-                    st.rerun()
-        
-        with col2:
-            if st.button("🗑️ Clear", key="dialog_chat_clear"):
+            if st.button("🗑️ Clear Chat", key="dialog_chat_clear"):
                 st.session_state.chat_history = []
                 st.session_state.global_chat_active = False
                 st.rerun()
         
-        with col3:
+        with col2:
             if st.button("❌ Close", key="dialog_chat_close"):
                 st.session_state.show_chat_modal = False
                 st.rerun()
@@ -2602,37 +2609,46 @@ def generate_summary_report(results):
     return summary_data.to_csv(index=False)
 
 def display_sidebar():
-    """Display sidebar with data exploration and navigation"""
+    """Display compact sidebar with data exploration and navigation"""
     
-    st.sidebar.markdown("## 📊 Explore Data")
+    # Compact CSS for smaller spacing
+    st.sidebar.markdown("""
+    <style>
+    .sidebar-section { margin-bottom: 10px; }
+    .sidebar-item { margin: 2px 0; }
+    </style>
+    """, unsafe_allow_html=True)
     
-    if st.sidebar.button("📊 Mortality Rates", help="Browse mortality data", width="stretch"):
-        st.session_state.show_mortality_explorer = True
-        st.rerun()
+    st.sidebar.markdown("### 📊 Data")
     
-    if st.sidebar.button("💰 Interest Rates", help="See current treasury yields", width="stretch"):
-        st.session_state.show_treasury_explorer = True
-        st.rerun()
+    # Compact exploration buttons 
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("📊", help="Mortality Rates", key="mort_compact"):
+            st.session_state.show_mortality_explorer = True
+            st.rerun()
+        if st.button("📈", help="Market Trends", key="market_compact"):
+            st.session_state.show_market_explorer = True
+            st.rerun()
+    with col2:
+        if st.button("💰", help="Interest Rates", key="interest_compact"):
+            st.session_state.show_treasury_explorer = True
+            st.rerun()
+        datasets_count = len(st.session_state.uploaded_datasets)
+        if st.button("📁", help=f"Your Data ({datasets_count})", key="data_compact"):
+            st.session_state.show_data_explorer = True
+            st.rerun()
     
-    if st.sidebar.button("📈 Market Trends", help="Explore market data", width="stretch"):
-        st.session_state.show_market_explorer = True
-        st.rerun()
-    
-    datasets_count = len(st.session_state.uploaded_datasets)
-    if st.sidebar.button(f"📁 Your Data ({datasets_count})", help="View your uploads", width="stretch"):
-        st.session_state.show_data_explorer = True
-        st.rerun()
-    
-    # Intelligent Data Cleaning
+    # Cleaning button
     if PHASE2_CLEANING_AVAILABLE:
-        if st.sidebar.button("🧹 Clean Data", help="Hybrid Statistical+Semantic Cleaning", width="stretch"):
+        if st.sidebar.button("🧹 Clean Data", help="Hybrid Statistical+Semantic Cleaning"):
             st.session_state.show_cleaning_explorer = True
             st.rerun()
     
     st.sidebar.markdown("---")
-    st.sidebar.markdown("## 🚀 Steps")
+    st.sidebar.markdown("### 🚀 Steps")
     
-    # Workflow navigation
+    # Compact workflow navigation
     steps = [
         ("1", "📤 Upload"),
         ("2", "🧠 Process"), 
@@ -2643,13 +2659,16 @@ def display_sidebar():
     
     current_step = st.session_state.workflow_step
     
-    for step_num, step_name in steps:
-        if int(step_num) == current_step:
-            st.sidebar.markdown(f"**▶️ {step_name}**")
-        else:
-            if st.sidebar.button(f"{step_name}", key=f"nav_{step_num}", width="stretch"):
-                st.session_state.workflow_step = int(step_num)
-                st.rerun()
+    # Display as compact grid
+    step_cols = st.sidebar.columns(5)
+    for i, (step_num, step_name) in enumerate(steps):
+        with step_cols[i]:
+            if int(step_num) == current_step:
+                st.markdown(f"**{step_num}**")
+            else:
+                if st.button(f"{step_num}", key=f"nav_{step_num}", help=step_name):
+                    st.session_state.workflow_step = int(step_num)
+                    st.rerun()
 
 def display_comprehensive_quality_report(df, filename, file_key):
     """Display enterprise data quality report with Great Expectations or fallback options"""
