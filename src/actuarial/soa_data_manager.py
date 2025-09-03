@@ -21,6 +21,10 @@ class SOADataManager:
         self.data_dir = Path("data/soa")
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
+        # Instance-level caching to prevent repeated table generation
+        self._cached_tables = {}
+        self._cached_rates = {}
+        
         # SOA data sources (official URLs and file formats)
         self.soa_sources = {
             "2017_cso": {
@@ -84,26 +88,33 @@ class SOADataManager:
     def load_2017_cso_table(self) -> pd.DataFrame:
         """Load 2017 CSO Mortality Table with proper structure"""
         
+        # Check cache first
+        if "2017_cso" in self._cached_tables:
+            return self._cached_tables["2017_cso"]
+        
         local_path = self.data_dir / self.soa_sources["2017_cso"]["local_file"]
         
         if not local_path.exists():
             # Create synthetic 2017 CSO data based on known structure
             print("📊 Creating 2017 CSO synthetic data...")
-            return self._create_synthetic_2017_cso()
+            table = self._create_synthetic_2017_cso()
+        else:
+            try:
+                # Try to read the actual SOA Excel file
+                df = pd.read_excel(local_path, sheet_name=0)
+                
+                # Process and standardize the mortality table
+                table = self._process_2017_cso_data(df)
+                
+                print(f"✅ Loaded 2017 CSO table with {len(table)} records")
+                
+            except Exception as e:
+                print(f"⚠️ Error loading 2017 CSO table: {e}")
+                table = self._create_synthetic_2017_cso()
         
-        try:
-            # Try to read the actual SOA Excel file
-            df = pd.read_excel(local_path, sheet_name=0)
-            
-            # Process and standardize the mortality table
-            processed_df = self._process_2017_cso_data(df)
-            
-            print(f"✅ Loaded 2017 CSO table with {len(processed_df)} records")
-            return processed_df
-            
-        except Exception as e:
-            print(f"⚠️ Error loading 2017 CSO table: {e}")
-            return self._create_synthetic_2017_cso()
+        # Cache the result
+        self._cached_tables["2017_cso"] = table
+        return table
     
     def load_mortality_improvement_scale(self, scale_name: str = "MP-2021") -> pd.DataFrame:
         """Load mortality improvement scale"""
@@ -128,6 +139,11 @@ class SOADataManager:
     def get_mortality_rate(self, age: int, gender: str, smoking_status: str, 
                           duration: int = 1, table_name: str = "2017_CSO") -> float:
         """Lookup mortality rate from loaded table"""
+        
+        # Create cache key for this lookup
+        cache_key = f"{age}_{gender}_{smoking_status}_{duration}_{table_name}"
+        if cache_key in self._cached_rates:
+            return self._cached_rates[cache_key]
         
         mortality_table = self.load_2017_cso_table()
         
@@ -165,10 +181,14 @@ class SOADataManager:
         matching_rates = mortality_table[mask]['mortality_rate'].values
         
         if len(matching_rates) > 0:
-            return matching_rates[0]
+            rate = matching_rates[0]
         else:
             # Fallback calculation if exact match not found
-            return self._estimate_mortality_rate(age, gender, smoking_status)
+            rate = self._estimate_mortality_rate(age, gender, smoking_status)
+        
+        # Cache the result
+        self._cached_rates[cache_key] = rate
+        return rate
     
     def get_mortality_improvement_factor(self, age: int, gender: str, 
                                        years_from_base: int) -> float:

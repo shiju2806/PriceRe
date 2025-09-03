@@ -166,15 +166,37 @@ class ProfessionalActuarialEngine:
         }
         
         total_face_amount = 0
-        total_policies = 0
+        unique_policy_ids = set()
         ages = []
         
         for dataset_name, mapping in mapped_data.items():
             df = mapping['dataframe']
             field_map = mapping['field_mapping']
             
-            # Count total policies
-            total_policies += len(df)
+            # Find unique policies using policy ID or row index as fallback
+            policy_id_col = None
+            for field_name, mapping_obj in field_map.items():
+                if hasattr(mapping_obj, 'standardized_name') and mapping_obj.standardized_name in ['policy_id', 'policy_number']:
+                    policy_id_col = mapping_obj.original_name
+                    break
+                elif isinstance(mapping_obj, dict) and mapping_obj.get('standardized_name') in ['policy_id', 'policy_number']:
+                    policy_id_col = mapping_obj.get('original_name') or mapping_obj.get('column_name')
+                    break
+            
+            if policy_id_col and policy_id_col in df.columns:
+                # Use actual policy IDs
+                unique_policy_ids.update(df[policy_id_col].astype(str))
+            else:
+                # Fallback: create unique IDs using dataset name + row index
+                for idx in range(len(df)):
+                    unique_policy_ids.add(f"{dataset_name}_{idx}")
+        
+        total_policies = len(unique_policy_ids)
+        
+        # Now process each dataset for face amount and other calculations
+        for dataset_name, mapping in mapped_data.items():
+            df = mapping['dataframe']
+            field_map = mapping['field_mapping']
             
             # Face amount analysis - handle FieldMapping objects
             face_mapping = None
@@ -454,14 +476,37 @@ class ProfessionalActuarialEngine:
         risk_factors = []
         risk_score = 2.5  # Start with neutral
         
-        total_policies = 0
+        unique_policy_ids = set()
         age_data = []
         smoker_percentage = 0
         
+        # First pass: count unique policies
         for dataset_name, mapping in mapped_data.items():
             df = mapping['dataframe']
             field_map = mapping['field_mapping']
-            total_policies += len(df)
+            
+            # Find unique policies using policy ID or row index as fallback
+            policy_id_col = None
+            for field_name, mapping_obj in field_map.items():
+                if hasattr(mapping_obj, 'standardized_name') and mapping_obj.standardized_name in ['policy_id', 'policy_number']:
+                    policy_id_col = mapping_obj.original_name
+                    break
+                elif isinstance(mapping_obj, dict) and mapping_obj.get('standardized_name') in ['policy_id', 'policy_number']:
+                    policy_id_col = mapping_obj.get('original_name') or mapping_obj.get('column_name')
+                    break
+            
+            if policy_id_col and policy_id_col in df.columns:
+                unique_policy_ids.update(df[policy_id_col].astype(str))
+            else:
+                for idx in range(len(df)):
+                    unique_policy_ids.add(f"{dataset_name}_{idx}")
+        
+        total_policies = len(unique_policy_ids)
+        
+        # Second pass: analyze data
+        for dataset_name, mapping in mapped_data.items():
+            df = mapping['dataframe']
+            field_map = mapping['field_mapping']
             
             # Age concentration risk
             if 'age' in field_map:
