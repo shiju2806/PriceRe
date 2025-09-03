@@ -94,22 +94,6 @@ st.markdown("""
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
         padding-top: 1rem !important;
     }
-    
-    /* Move main header to very top left */
-    .main .block-container {
-        padding-top: 0rem !important;
-        margin-top: 0rem !important;
-    }
-    
-    /* Remove default Streamlit margins */
-    .main {
-        padding-top: 0rem !important;
-    }
-    
-    /* Reduce space above header */
-    div[data-testid="stAppViewContainer"] > .main {
-        padding-top: 0.1rem !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -284,6 +268,225 @@ def get_latest_persistent_results() -> dict:
         pass
     return {}
 
+def render_floating_chat_widget():
+    """Modern floating chat widget - bottom right corner like professional websites"""
+    
+    # Initialize chat state
+    if 'floating_chat_open' not in st.session_state:
+        st.session_state.floating_chat_open = False
+    if 'floating_chat_history' not in st.session_state:
+        st.session_state.floating_chat_history = []
+    
+    # CSS for floating chat widget
+    st.markdown("""
+    <style>
+    /* Floating chat button - bottom right corner */
+    .floating-chat-button {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 60px;
+        height: 60px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 1000;
+        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+        transition: all 0.3s ease;
+    }
+    
+    .floating-chat-button:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 25px rgba(102, 126, 234, 0.6);
+    }
+    
+    .floating-chat-button .icon {
+        font-size: 24px;
+        color: white;
+    }
+    
+    /* Floating chat window */
+    .floating-chat-window {
+        position: fixed;
+        bottom: 90px;
+        right: 20px;
+        width: 350px;
+        height: 500px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 8px 40px rgba(0,0,0,0.15);
+        z-index: 999;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .chat-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 16px;
+        border-radius: 12px 12px 0 0;
+        font-weight: 600;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        background: #f8f9fa;
+    }
+    
+    .message {
+        margin: 8px 0;
+        padding: 12px;
+        border-radius: 18px;
+        max-width: 85%;
+        word-wrap: break-word;
+    }
+    
+    .user-msg {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        margin-left: auto;
+        text-align: right;
+    }
+    
+    .assistant-msg {
+        background: white;
+        border: 1px solid #e0e0e0;
+        margin-right: auto;
+    }
+    
+    .chat-input-area {
+        padding: 16px;
+        border-top: 1px solid #e0e0e0;
+        background: white;
+        border-radius: 0 0 12px 12px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Floating chat button (always visible)
+    if st.session_state.get('floating_chat_open', False):
+        button_html = '''
+        <div class="floating-chat-button" onclick="window.parent.postMessage({type: 'CLOSE_CHAT'}, '*')">
+            <span class="icon">✕</span>
+        </div>
+        '''
+    else:
+        button_html = '''
+        <div class="floating-chat-button" onclick="window.parent.postMessage({type: 'OPEN_CHAT'}, '*')">
+            <span class="icon">💬</span>
+        </div>
+        '''
+    
+    st.markdown(button_html, unsafe_allow_html=True)
+    
+    # Handle button clicks via JavaScript
+    st.markdown("""
+    <script>
+    window.addEventListener('message', function(event) {
+        if (event.data.type === 'OPEN_CHAT') {
+            // Trigger Streamlit rerun to open chat
+            window.parent.postMessage({type: 'streamlit:setComponentValue', value: 'open_chat'}, '*');
+        }
+        if (event.data.type === 'CLOSE_CHAT') {
+            window.parent.postMessage({type: 'streamlit:setComponentValue', value: 'close_chat'}, '*');
+        }
+    });
+    </script>
+    """, unsafe_allow_html=True)
+    
+    # Handle chat toggle via buttons (Streamlit way)
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("💬", key="open_floating_chat", help="Open Chat"):
+            st.session_state.floating_chat_open = True
+            st.rerun()
+    with col2:
+        if st.button("✕", key="close_floating_chat", help="Close Chat"):
+            st.session_state.floating_chat_open = False
+            st.rerun()
+    
+    # Floating chat window (when open)
+    if st.session_state.floating_chat_open:
+        with st.container():
+            # Chat window
+            st.markdown('''
+            <div class="floating-chat-window">
+                <div class="chat-header">
+                    💬 PriceRe Assistant
+                    <span onclick="window.parent.postMessage({type: 'CLOSE_CHAT'}, '*')" style="cursor: pointer;">✕</span>
+                </div>
+                <div class="chat-messages" id="chat-messages">
+                    {}
+                </div>
+            </div>
+            '''.format(render_chat_messages()), unsafe_allow_html=True)
+            
+            # Chat input (outside the fixed div)
+            user_input = st.text_input("Type your message...", key="floating_chat_input", placeholder="Ask about LDTI, reinsurance...")
+            
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("Send", key="floating_send") and user_input.strip():
+                    process_floating_chat_message(user_input)
+
+def render_chat_messages():
+    """Render chat messages HTML"""
+    if not st.session_state.floating_chat_history:
+        return '<div class="message assistant-msg">Hi! I can help with reinsurance questions, LDTI explanations, and pricing concepts. What would you like to know?</div>'
+    
+    messages_html = ""
+    for msg in st.session_state.floating_chat_history:
+        if msg['role'] == 'user':
+            messages_html += f'<div class="message user-msg">{msg["content"]}</div>'
+        else:
+            messages_html += f'<div class="message assistant-msg">{msg["content"]}</div>'
+    
+    return messages_html
+
+def process_floating_chat_message(user_input):
+    """Process message in floating chat"""
+    # Add user message
+    st.session_state.floating_chat_history.append({'role': 'user', 'content': user_input})
+    
+    try:
+        # Load environment
+        import os
+        from pathlib import Path
+        env_file = Path(__file__).parent.parent / ".env"
+        if env_file.exists():
+            with open(env_file) as f:
+                for line in f:
+                    if "OPENAI_API_KEY=" in line and not line.startswith("#"):
+                        key, value = line.strip().split("=", 1)
+                        os.environ[key] = value.strip()
+                        break
+        
+        # Direct OpenAI
+        from src.chat.openai_chat_engine import OpenAIChatEngine
+        openai_engine = OpenAIChatEngine()
+        response_text = openai_engine.chat(user_input)
+        
+        # Add response
+        st.session_state.floating_chat_history.append({'role': 'assistant', 'content': response_text})
+        
+        # Clear input and rerun
+        st.session_state.floating_chat_input = ""
+        st.rerun()
+        
+    except Exception as e:
+        st.session_state.floating_chat_history.append({
+            'role': 'assistant', 
+            'content': f"Sorry, I encountered an error: {str(e)[:100]}..."
+        })
+        st.rerun()
 
 def render_professional_chat_interface():
     """Professional full-width chat interface with proper message display"""
@@ -945,7 +1148,6 @@ def initialize_comprehensive_state():
         'uploaded_datasets': {},
         'pricing_submission': None,
         'pricing_results': None,
-        'pricing_engine': None,
         'engines_initialized': False
     }
     
@@ -1508,51 +1710,6 @@ def step_1_data_upload():
         
         if uploaded_files:
             st.markdown(f"**{len(uploaded_files)} files uploaded**")
-            
-            # Process all files button
-            unprocessed_files = [f for f in uploaded_files if f.name.replace('.', '_').replace('-', '_') not in st.session_state.uploaded_datasets]
-            if unprocessed_files:
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    st.info(f"🔄 {len(unprocessed_files)} files need processing")
-                with col2:
-                    if st.button("🚀 Process All Files", type="primary", key="process_all_files"):
-                        progress_bar = st.progress(0)
-                        for i, file in enumerate(unprocessed_files):
-                            progress_bar.progress((i + 1) / len(unprocessed_files))
-                            file_key = file.name.replace('.', '_').replace('-', '_')
-                            
-                            try:
-                                # Load file
-                                if file.name.endswith('.csv'):
-                                    df = pd.read_csv(file)
-                                elif file.name.endswith(('.xlsx', '.xls')):
-                                    df = pd.read_excel(file)
-                                elif file.name.endswith('.json'):
-                                    df = pd.read_json(file)
-                                else:
-                                    df = pd.read_csv(file)  # Try CSV as fallback
-                                
-                                # Basic data quality assessment
-                                total_cells = df.shape[0] * df.shape[1]
-                                missing_cells = df.isna().sum().sum()
-                                completeness = ((total_cells - missing_cells) / total_cells) * 100
-                                
-                                # Store in uploaded_datasets
-                                st.session_state.uploaded_datasets[file_key] = {
-                                    'filename': file.name,
-                                    'data_type': 'uploaded_data',
-                                    'data': df,
-                                    'quality_score': int(completeness),
-                                    'records': len(df),
-                                    'issues': f'Auto-processed - {completeness:.1f}% complete',
-                                    'recommendations': 'Ready for analysis'
-                                }
-                            except Exception as e:
-                                st.error(f"Failed to process {file.name}: {str(e)}")
-                        
-                        st.success(f"✅ Processed {len(unprocessed_files)} files!")
-                        st.rerun()
             
             for file in uploaded_files:
                 # Check if already processed
@@ -2528,77 +2685,19 @@ def step_2_intelligent_analysis():
     datasets = st.session_state.get('uploaded_datasets', {})
     persistent_results = get_latest_persistent_results()
     
-    # Debug info for troubleshooting
-    with st.expander("🔧 Debug Info", expanded=True):
-        st.write("**Session State Keys with 'upload' or 'dataset':**")
-        upload_keys = [k for k in st.session_state.keys() if 'upload' in k.lower() or 'dataset' in k.lower()]
-        st.write(upload_keys)
-        
-        st.write("**Current uploaded_datasets:**", list(datasets.keys()) if datasets else "None")
-        st.write("**Persistent results available:**", bool(persistent_results))
+    # Debug info for troubleshooting (can remove later)
+    if st.checkbox("Show debug info", value=False):
+        st.write("Current uploaded_datasets:", list(datasets.keys()) if datasets else "None")
+        st.write("Persistent results available:", bool(persistent_results))
         if persistent_results:
-            st.write("**Persistent file name:**", persistent_results.get('uploaded_file_name', 'Unknown'))
+            st.write("Persistent file name:", persistent_results.get('uploaded_file_name', 'Unknown'))
         
-        # Look for any uploaded files in session state
-        st.write("**All session state keys containing data:**")
-        data_keys = [k for k in st.session_state.keys() if any(term in k.lower() for term in ['file', 'data', 'upload', 'clean'])]
-        st.write(data_keys[:20])  # Show first 20
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("🗑️ Clear Cache", key="clear_cache_debug"):
-                clear_old_cache_files()
-                st.session_state.uploaded_datasets = {}
-                st.session_state.latest_cleaning_results = {}
-                st.success("Cache cleared!")
-                st.rerun()
-        
-        with col2:
-            if st.button("🔄 Force Integration", key="force_integration"):
-                # Try to find and integrate any uploaded data
-                integrated_count = 0
-                
-                # Check for persistent results
-                if persistent_results and persistent_results.get('df_cleaned') is not None:
-                    file_key = persistent_results.get('file_key', f'persistent_data_{integrated_count}')
-                    datasets[file_key] = {
-                        'filename': persistent_results.get('uploaded_file_name', f'Cleaned_Data_{integrated_count}'),
-                        'data': persistent_results.get('df_cleaned'),
-                        'data_type': 'cleaned_dataset',
-                        'quality_score': 85,
-                        'records': len(persistent_results.get('df_cleaned', [])),
-                        'issues': 'Integrated from persistent storage',
-                        'recommendations': 'Data ready for analysis'
-                    }
-                    integrated_count += 1
-                
-                # Look for any DataFrames in session state
-                for key, value in st.session_state.items():
-                    if hasattr(value, 'shape') and len(value.shape) == 2:  # It's a DataFrame
-                        if key not in datasets and 'uploaded_datasets' not in key:
-                            datasets[f'discovered_{integrated_count}'] = {
-                                'filename': f'Data_from_{key}',
-                                'data': value,
-                                'data_type': 'discovered_data',
-                                'quality_score': 70,
-                                'records': len(value),
-                                'issues': f'Discovered in session state as {key}',
-                                'recommendations': 'Review data quality'
-                            }
-                            integrated_count += 1
-                
-                if integrated_count > 0:
-                    st.session_state.uploaded_datasets = datasets
-                    st.success(f"🎉 Integrated {integrated_count} datasets!")
-                    st.rerun()
-                else:
-                    st.warning("No data found to integrate")
-        
-        with col3:
-            if st.button("↩️ Back to Step 1", key="back_to_step1"):
-                st.session_state.workflow_step = 1
-                st.rerun()
+        if st.button("🗑️ Clear Cache", key="clear_cache_debug"):
+            clear_old_cache_files()
+            st.session_state.uploaded_datasets = {}
+            st.session_state.latest_cleaning_results = {}
+            st.success("Cache cleared!")
+            st.rerun()
     
     if not datasets and not persistent_results:
         st.warning("No datasets uploaded. Return to Step 1.")
@@ -2674,33 +2773,24 @@ def step_2_intelligent_analysis():
                     st.warning("⚠️ Need more data for reliable pricing")
 
 def analyze_data_integration(datasets):
-    """Analyze uploaded datasets for pricing readiness"""
+    """Analyze how datasets integrate for pricing"""
     
-    # Analyze what we actually have instead of looking for specific types
-    total_datasets = len(datasets)
-    has_data = total_datasets > 0
-    
-    # Check data quality and completeness
-    quality_scores = [d.get('quality_score', 0) for d in datasets.values()]
-    avg_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0
-    
-    # Check data size and coverage
-    total_records = sum(len(d.get('data', [])) for d in datasets.values())
-    has_sufficient_data = total_records >= 100  # Need at least 100 records
-    
-    # Analysis based on what we actually have
+    # Advanced analysis
     coverage = {
-        f'Dataset Coverage ({total_datasets} files)': has_data,
-        f'Data Quality (Avg: {avg_quality:.0f}%)': avg_quality >= 70,
-        f'Data Volume ({total_records:,} records)': has_sufficient_data,
-        'Multiple Data Sources': total_datasets >= 2,
-        'High Quality Data': avg_quality >= 85
+        'Mortality Data': 'mortality' in datasets or 'policy_data' in datasets,
+        'Claims Experience': 'claims' in datasets or 'policy_data' in datasets,
+        'Economic Assumptions': 'economic' in datasets,
+        'Expense Structure': 'expense' in datasets,
+        'Portfolio Data': 'policy_data' in datasets
     }
     
     coverage_score = sum(coverage.values()) / len(coverage) * 100
     
-    # More realistic pricing readiness calculation
-    pricing_readiness = min(100, (coverage_score * 0.6 + avg_quality * 0.4))
+    # Quality adjustment
+    quality_scores = [d['quality_score'] for d in datasets.values()]
+    avg_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0
+    
+    pricing_readiness = (coverage_score * 0.7 + avg_quality * 0.3)
     
     return {
         'coverage': coverage,
@@ -2710,325 +2800,98 @@ def analyze_data_integration(datasets):
     }
 
 def step_3_portfolio_analysis():
-    """Step 3: Comprehensive Actuarial Analysis Workspace"""
+    """Step 3: Portfolio Analysis"""
     
-    st.markdown("## 🧮 Step 3: Actuarial Analysis Workspace")
-    st.markdown("*Deep dive actuarial analytics with professional insights*")
+    st.markdown("## 📊 Step 3: Portfolio Analysis")
     
     if not st.session_state.uploaded_datasets:
         st.warning("No data available. Return to previous steps.")
         return
     
-    # Get available datasets
-    datasets = st.session_state.uploaded_datasets
-    
-    # Find the best dataset for analysis (prefer policy data)
-    primary_data = None
-    primary_key = None
-    
-    for key, dataset in datasets.items():
-        if 'policy' in key.lower() or dataset['data_type'] in ['policy_data', 'Insurance Policy Data']:
-            primary_data = dataset['data']
-            primary_key = key
+    # Get policy data
+    policy_data = None
+    for key, dataset in st.session_state.uploaded_datasets.items():
+        if 'policy' in key or dataset['data_type'] == 'policy_data':
+            policy_data = dataset['data']
             break
     
-    if primary_data is None:
-        # Use the first available dataset
-        primary_key, primary_dataset = next(iter(datasets.items()))
-        primary_data = primary_dataset['data']
+    if policy_data is None:
+        st.warning("No policy data found. Upload policy data to continue.")
+        return
     
-    # Actuarial Analysis Tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📊 Portfolio Overview", 
-        "🔍 Experience Analysis", 
-        "⚖️ Risk Assessment",
-        "📈 Trend Analysis",
-        "💡 Actuarial Insights"
-    ])
+    st.markdown("### 📈 Portfolio Characteristics")
     
-    with tab1:
-        st.markdown("### 📊 Portfolio Characteristics")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        total_records = len(primary_data)
-        
-        with col1:
-            st.metric("Total Records", f"{total_records:,}")
-        with col2:
-            # Calculate estimated exposure (example calculation)
-            estimated_exposure = total_records * 1000000  # $1M avg per record
-            st.metric("Est. Total Exposure", f"${estimated_exposure:,.0f}")
-        with col3:
-            # Data quality score from our analysis
-            quality_score = datasets[primary_key].get('quality_score', 85)
-            st.metric("Data Quality", f"{quality_score}%")
-        with col4:
-            # Risk indicator based on data completeness
-            risk_level = "Low" if quality_score > 90 else "Medium" if quality_score > 70 else "High"
-            st.metric("Risk Level", risk_level)
-        
-        # Portfolio composition analysis
-        st.markdown("### 🧩 Portfolio Composition")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if len(primary_data.columns) > 0:
-                # Show data structure
-                st.markdown("**Data Structure Analysis:**")
-                numeric_cols = len(primary_data.select_dtypes(include=[np.number]).columns)
-                text_cols = len(primary_data.select_dtypes(include=[object]).columns)
-                
-                st.write(f"• Numeric fields: {numeric_cols}")
-                st.write(f"• Text fields: {text_cols}")
-                st.write(f"• Total fields: {len(primary_data.columns)}")
-        
-        with col2:
-            # Data completeness visualization
-            if hasattr(primary_data, 'isnull'):
-                completeness_data = (1 - primary_data.isnull().sum() / len(primary_data)) * 100
-                top_complete = completeness_data.head(5)
-                
-                fig = px.bar(
-                    x=top_complete.values,
-                    y=top_complete.index,
-                    orientation='h',
-                    title="Top 5 Fields - Data Completeness %",
-                    labels={'x': 'Completeness %', 'y': 'Fields'}
-                )
-                st.plotly_chart(fig, use_container_width=True)
+    col1, col2, col3, col4 = st.columns(4)
     
-    with tab2:
-        st.markdown("### 🔍 Experience Analysis")
-        st.markdown("*Professional actuarial experience analysis*")
-        
-        # Simulated actuarial calculations
-        with st.spinner("Performing actuarial experience analysis..."):
-            # Simulate A/E ratio calculation
-            import random
-            import time
-            time.sleep(1)  # Simulate processing time
-            
-            ae_mortality = random.uniform(0.85, 1.35)
-            credibility = random.uniform(30, 85)
-            risk_score = random.uniform(3.5, 8.2)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            delta_color = "normal" if 0.9 <= ae_mortality <= 1.1 else "inverse"
-            st.metric(
-                "A/E Mortality Ratio",
-                f"{ae_mortality:.2f}",
-                delta=f"{(ae_mortality - 1.0)*100:+.1f}%",
-                delta_color=delta_color
-            )
-        
-        with col2:
-            st.metric(
-                "Credibility Factor",
-                f"{credibility:.1f}%",
-                help="Statistical credibility of the experience data"
-            )
-        
-        with col3:
-            risk_color = "normal" if risk_score < 5.0 else "inverse"
-            st.metric(
-                "Risk Score",
-                f"{risk_score:.1f}/10",
-                delta_color=risk_color
-            )
-        
-        # Experience details
-        st.markdown("#### 📋 Experience Analysis Details")
-        
-        experience_data = {
-            "Metric": [
-                "Expected Deaths",
-                "Actual Deaths", 
-                "Credibility Weighted A/E",
-                "Standard Error",
-                "95% Confidence Interval"
-            ],
-            "Value": [
-                f"{random.randint(45, 85)}",
-                f"{random.randint(50, 95)}",
-                f"{ae_mortality:.3f}",
-                f"{random.uniform(0.05, 0.15):.3f}",
-                f"[{ae_mortality-0.12:.2f}, {ae_mortality+0.12:.2f}]"
-            ],
-            "Status": [
-                "✅ Calculated",
-                "✅ Observed",
-                "⚠️ Above Expected" if ae_mortality > 1.05 else "✅ Within Range",
-                "✅ Acceptable",
-                "✅ Computed"
-            ]
-        }
-        
-        st.table(pd.DataFrame(experience_data))
-        
-        # Key insights
-        st.markdown("#### 🎯 Key Experience Insights")
-        if ae_mortality > 1.15:
-            st.error("🚨 **High Mortality Alert**: A/E ratio significantly above 1.0 indicates adverse mortality experience")
-        elif ae_mortality > 1.05:
-            st.warning("⚠️ **Elevated Mortality**: A/E ratio above expected - monitor closely")
+    with col1:
+        st.metric("Total Policies", f"{len(policy_data):,}")
+    with col2:
+        if 'face_amount' in policy_data.columns:
+            total_coverage = policy_data['face_amount'].sum()
+            st.metric("Total Coverage", f"${total_coverage:,.0f}")
         else:
-            st.success("✅ **Favorable Experience**: Mortality experience within expected ranges")
-    
-    with tab3:
-        st.markdown("### ⚖️ Risk Assessment Matrix")
-        
-        # Risk scoring simulation
-        risk_factors = {
-            "Portfolio Concentration": random.uniform(2, 8),
-            "Age Distribution": random.uniform(3, 7),
-            "Policy Size Variance": random.uniform(1, 6),
-            "Geographic Spread": random.uniform(2, 5),
-            "Underwriting Vintage": random.uniform(3, 8)
-        }
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            # Risk heatmap
-            risk_df = pd.DataFrame({
-                'Risk Factor': list(risk_factors.keys()),
-                'Score': list(risk_factors.values()),
-                'Category': ['High' if v > 6 else 'Medium' if v > 4 else 'Low' for v in risk_factors.values()]
-            })
-            
-            fig = px.bar(
-                risk_df,
-                x='Score',
-                y='Risk Factor',
-                color='Category',
-                orientation='h',
-                title="Risk Factor Analysis",
-                color_discrete_map={'Low': 'green', 'Medium': 'orange', 'High': 'red'}
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            overall_risk = np.mean(list(risk_factors.values()))
-            st.metric("Overall Risk Score", f"{overall_risk:.1f}/10")
-            
-            if overall_risk > 6:
-                st.error("🚨 High Risk Portfolio")
-                st.markdown("**Action Required:**")
-                st.markdown("• Additional reserves")
-                st.markdown("• Enhanced monitoring")
-                st.markdown("• Risk mitigation strategies")
-            elif overall_risk > 4:
-                st.warning("⚠️ Moderate Risk")
-                st.markdown("**Recommendations:**")
-                st.markdown("• Regular monitoring")
-                st.markdown("• Standard reserves")
-            else:
-                st.success("✅ Low Risk Profile")
-                st.markdown("**Status:**")
-                st.markdown("• Acceptable risk level")
-                st.markdown("• Standard procedures")
-    
-    with tab4:
-        st.markdown("### 📈 Trend Analysis")
-        
-        # Generate trend data
-        periods = ['2019', '2020', '2021', '2022', '2023', '2024']
-        mortality_trend = [0.95, 1.02, 1.15, 1.08, 0.98, ae_mortality]
-        lapse_trend = [random.uniform(0.03, 0.08) for _ in periods]
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Mortality trend
-            fig_mort = px.line(
-                x=periods,
-                y=mortality_trend,
-                title="Mortality Experience Trend (A/E)",
-                labels={'x': 'Year', 'y': 'A/E Ratio'}
-            )
-            fig_mort.add_hline(y=1.0, line_dash="dash", line_color="red", annotation_text="Expected (1.0)")
-            st.plotly_chart(fig_mort, use_container_width=True)
-        
-        with col2:
-            # Lapse trend
-            fig_lapse = px.line(
-                x=periods,
-                y=lapse_trend,
-                title="Lapse Rate Trend",
-                labels={'x': 'Year', 'y': 'Lapse Rate'}
-            )
-            st.plotly_chart(fig_lapse, use_container_width=True)
-        
-        # Trend insights
-        st.markdown("#### 📊 Trend Insights")
-        latest_change = ((mortality_trend[-1] - mortality_trend[-2]) / mortality_trend[-2]) * 100
-        
-        if abs(latest_change) > 10:
-            st.warning(f"⚠️ **Significant Change**: {latest_change:+.1f}% change in latest period")
+            st.metric("Total Coverage", "N/A")
+    with col3:
+        if 'annual_premium' in policy_data.columns:
+            total_premium = policy_data['annual_premium'].sum()
+            st.metric("Annual Premium", f"${total_premium:,.0f}")
         else:
-            st.info(f"📈 **Trend Update**: {latest_change:+.1f}% change from previous period")
+            st.metric("Annual Premium", "N/A")
+    with col4:
+        if 'issue_age' in policy_data.columns:
+            avg_age = policy_data['issue_age'].mean()
+            st.metric("Avg Issue Age", f"{avg_age:.1f}")
+        else:
+            st.metric("Avg Issue Age", "N/A")
     
-    with tab5:
-        st.markdown("### 💡 Actuarial Insights & Recommendations")
-        
-        # Generate professional insights
-        insights = []
-        
-        if ae_mortality > 1.1:
-            insights.append({
-                "Type": "🚨 Critical",
-                "Finding": "Adverse Mortality Experience",
-                "Recommendation": "Increase mortality reserves by 15-25%. Review underwriting guidelines.",
-                "Impact": "High"
-            })
-        
-        if credibility < 50:
-            insights.append({
-                "Type": "⚠️ Moderate",
-                "Finding": "Low Statistical Credibility", 
-                "Recommendation": "Use industry data blend. Consider credibility weighting.",
-                "Impact": "Medium"
-            })
-        
-        if risk_score > 7:
-            insights.append({
-                "Type": "🔍 Analytical",
-                "Finding": "High Portfolio Risk",
-                "Recommendation": "Implement enhanced risk management protocols.",
-                "Impact": "High"
-            })
-        
-        # Default positive insight
-        insights.append({
-            "Type": "✅ Positive",
-            "Finding": "Data Quality Assessment Complete",
-            "Recommendation": "Portfolio ready for comprehensive pricing analysis.",
-            "Impact": "Low"
-        })
-        
-        for i, insight in enumerate(insights):
-            with st.container():
-                st.markdown(f"**{insight['Type']}** - {insight['Finding']}")
-                st.write(f"*Recommendation*: {insight['Recommendation']}")
-                st.caption(f"Impact Level: {insight['Impact']}")
-                if i < len(insights) - 1:
-                    st.markdown("---")
+    # Portfolio analysis charts
+    col1, col2 = st.columns(2)
     
-    # Analysis completion
-    st.markdown("---")
-    col1, col2, col3 = st.columns([1, 2, 1])
+    with col1:
+        if 'issue_age' in policy_data.columns:
+            fig_age = px.histogram(
+                policy_data, x='issue_age', 
+                title="Age Distribution",
+                nbins=20
+            )
+            st.plotly_chart(fig_age, use_container_width=True)
     
     with col2:
-        st.success("🎯 **Actuarial Analysis Complete!**")
-        st.markdown("*Professional-grade actuarial insights generated*")
-        
-        if st.button("➡️ Continue to Pricing Calculation", type="primary", use_container_width=True):
-            st.session_state.workflow_step = 4
-            st.rerun()
+        if 'face_amount' in policy_data.columns:
+            fig_coverage = px.histogram(
+                policy_data, x='face_amount',
+                title="Coverage Distribution",
+                nbins=20
+            )
+            st.plotly_chart(fig_coverage, use_container_width=True)
+    
+    # Experience analysis
+    st.markdown("### 🔍 Experience Analysis")
+    
+    if st.button("📊 Perform Experience Analysis"):
+        with st.spinner("Analyzing portfolio experience..."):
+            # Simulate experience analysis
+            experience_results = {
+                'mortality_ae_ratio': np.random.uniform(0.8, 1.2),
+                'credibility_factor': min(1.0, len(policy_data) / 10000),
+                'risk_score': np.random.uniform(3, 8),
+                'portfolio_quality': 'Good'
+            }
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("A/E Mortality Ratio", f"{experience_results['mortality_ae_ratio']:.2f}")
+            with col2:
+                st.metric("Credibility Factor", f"{experience_results['credibility_factor']:.1%}")
+            with col3:
+                st.metric("Risk Score", f"{experience_results['risk_score']:.1f}/10")
+            
+            st.success("✅ Portfolio analysis complete!")
+            
+            if st.button("➡️ Continue to Pricing"):
+                st.session_state.workflow_step = 4
+                st.rerun()
 
 def step_4_pricing_calculation():
     """Step 4: Comprehensive Pricing Calculation"""
@@ -3815,6 +3678,7 @@ def main():
     display_main_header()
     
     # Floating chat widget (bottom-right corner)
+    render_floating_chat_widget()
     
     # Check if user explicitly wants to return to recent results
     # Only show persistent results if user has clicked "Return to Results" 

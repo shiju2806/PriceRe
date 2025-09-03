@@ -1,0 +1,134 @@
+{
+  "actuarial_standards": {
+    "source": "Society of Actuaries (SOA) and American Academy of Actuaries (AAA)",
+    "last_updated": "2024-01-01",
+    
+    "credibility": {
+      "full_credibility_deaths": 1082,
+      "partial_credibility_threshold": 0.3,
+      "minimum_credibility": 0.1,
+      "credibility_formula": "sqrt(actual_deaths / full_credibility_deaths)"
+    },
+    
+    "experience_analysis": {
+      "adverse_threshold": 1.15,
+      "elevated_threshold": 1.05,
+      "favorable_threshold": 0.85,
+      "statistical_significance_chi_square": 3.84,
+      "minimum_deaths_for_significance": 10
+    },
+    
+    "risk_scoring": {
+      "base_risk_score": 2.5,
+      "max_risk_score": 5.0,
+      "min_risk_score": 1.0,
+      
+      "risk_weights": {
+        "mortality": 0.4,
+        "interest_rate": 0.3,
+        "concentration": 0.2,
+        "operational": 0.1
+      },
+      
+      "mortality_risk": {
+        "high_age_threshold": 65,
+        "young_age_threshold": 30,
+        "low_age_diversity_std": 5,
+        "high_smoking_threshold": 0.3,
+        "moderate_smoking_threshold": 0.15,
+        "small_portfolio_threshold": 1000,
+        "medium_portfolio_threshold": 5000
+      },
+      
+      "interest_rate_risk": {
+        "very_low_rate_threshold": 0.03,
+        "low_rate_threshold": 0.04,
+        "high_rate_threshold": 0.06,
+        "high_volatility_threshold": 0.03,
+        "moderate_volatility_threshold": 0.02
+      },
+      
+      "concentration_risk": {
+        "top_1_percent_high_threshold": 0.20,
+        "top_5_percent_moderate_threshold": 0.40,
+        "single_state_high_threshold": 0.50,
+        "single_state_moderate_threshold": 0.30
+      }
+    },
+    
+    "pricing_assumptions": {
+      "default_expense_loading": 0.08,
+      "default_profit_margin": 0.12,
+      "default_mortality_margin": 0.05,
+      "risk_free_spread": 0.015,
+      
+      "rate_adjustment_ranges": {
+        "high_mortality_increase": [0.15, 0.25],
+        "moderate_mortality_increase": [0.05, 0.10],
+        "favorable_mortality_decrease": [0.10, 0.15]
+      }
+    },
+    
+    "capital_requirements": {
+      "var_confidence_level": 0.995,
+      "monte_carlo_simulations": 5000,
+      "base_mortality_rate": 0.008,
+      "mortality_volatility": 0.15,
+      "statutory_reserve_rate": 0.020,
+      "economic_reserve_rate": 0.018
+    },
+    
+    "rate_assumptions": {
+      "mean_reversion_speed": 0.10,
+      "min_mean_reversion": 0.01,
+      "max_mean_reversion": 0.5,
+      "default_mean_reversion": 0.10,
+      "long_term_window_months": 60
+    },
+    
+    "default_assumptions": {
+      "source": "Industry averages - replace with actual data when available",
+      "average_policy_size": null,
+      "average_age": null,
+      "gender_distribution": null,
+      "smoking_distribution": null,
+      "note": "All defaults should be calculated from actual portfolio data"
+    }
+  },
+  
+  "regulatory_requirements": {
+    "vm20": {
+      "description": "NAIC VM-20 Principle-Based Reserves",
+      "deterministic_scenarios": 10000,
+      "stochastic_scenarios": 50,
+      "cte_level": 70
+    },
+    
+    "c3_phase_2": {
+      "description": "C3 Phase 2 Capital Requirements",
+      "scenarios": 10000,
+      "cte_level": 90
+    }
+  },
+  
+  "data_quality_thresholds": {
+    "minimum_completeness": 0.80,
+    "minimum_consistency": 0.85,
+    "minimum_validity": 0.90,
+    "outlier_detection_std": 3.0
+  },
+  
+  "api_configuration": {
+    "fred_api": {
+      "base_url": "https://api.stlouisfed.org/fred",
+      "cache_duration_days": 1,
+      "fallback_if_unavailable": true
+    },
+    
+    "soa_tables": {
+      "cache_duration_days": 30,
+      "auto_download": true,
+      "use_synthetic_if_unavailable": true
+    }
+  }
+}
